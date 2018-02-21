@@ -193,4 +193,39 @@ TEST(MapTest, MapValues__extract_values_from_std_map) {
   EXPECT_THAT(GetConstValues(MapValues(input)), ElementsAre(1, 2));
 }
 
+TEST(FilterTest, can_const_filter_const_collection) {
+  std::list<int> input{1, 2, 3, 4, 5};
+  auto filter_function = [](const int& value) { return value % 2 == 0; };
+
+  EXPECT_THAT(GetConstValues(Filter(std::as_const(input), filter_function)), ElementsAre(2, 4));
+}
+
+TEST(FilterTest, can_const_filter_non_const_collection) {
+  std::list<int> input{1, 2, 3, 4, 5};
+  auto filter_function = [](const int& value) { return value % 2 == 0; };
+
+  EXPECT_THAT(GetConstValues(Filter(input, filter_function)), ElementsAre(2, 4));
+}
+
+TEST(FilterTest, can_non_const_filter_non_const_collection) {
+  std::list<int> input{1, 2, 3, 4, 5};
+  auto filter_function = [](const int& value) { return value % 2 == 0; };
+
+  EXPECT_THAT(GetNonConstValues(&Filter(input, filter_function)), ElementsAre(2, 4));
+}
+
+TEST(FilterTest, can_const_filter_rvalue_collection) {
+  std::list<int> input{1, 2, 3, 4, 5};
+  auto filter_function = [](const int& value) { return value % 2 == 0; };
+
+  EXPECT_THAT(GetConstValues(Filter(std::move(input), filter_function)), ElementsAre(2, 4));
+}
+
+TEST(FilterTest, can_non_const_filter_rvalue_collection) {
+  std::list<int> input{1, 2, 3, 4, 5};
+  auto filter_function = [](const int& value) { return value % 2 == 0; };
+
+  EXPECT_THAT(GetNonConstValues(&Filter(std::move(input), filter_function)), ElementsAre(2, 4));
+}
+
 }  // namespace iterator

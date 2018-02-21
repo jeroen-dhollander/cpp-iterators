@@ -15,7 +15,9 @@ class Iterator;
 template <class, class>
 class JoinedIterator;
 template <class, typename>
-class Mapper;
+class MapIterator;
+template <class, typename>
+class FilterIterator;
 
 // Allows you to return an iterator over a collection, without actually having to expose access to the collection
 // itself.
@@ -81,7 +83,7 @@ auto Join(T1&& iterable_1, T2&& iterable_2) -> JoinedIterator<T1, T2>;
 // }
 //
 template <typename _Iterable, typename Function>
-auto Map(_Iterable&& data, Function mapping_function) -> Mapper<_Iterable, Function>;
+auto Map(_Iterable&& data, Function mapping_function) -> MapIterator<_Iterable, Function>;
 
 // Iterates over the keys of a std::map
 template <typename _Iterable>
@@ -94,6 +96,10 @@ template <typename _Iterable>
 auto MapValues(_Iterable&& map) {
   return Map(std::forward<_Iterable>(map), [](const auto& map_pair) { return map_pair.second; });
 }
+
+// Returns the elements for which filter(element) returns 'true'
+template <typename _Iterable, typename FilterFunction>
+auto Filter(_Iterable&& data, FilterFunction filter) -> FilterIterator<_Iterable, FilterFunction>;
 
 //-----------------------------------------------------------------------------
 // Implementation
@@ -270,7 +276,7 @@ auto Join(T1&& iterable_1, T2&& iterable_2) -> JoinedIterator<T1, T2> {
 }
 
 template <typename T, typename Function>
-class Mapper {
+class MapIterator {
  public:
   template <class, typename>
   class _Iterator;
@@ -283,7 +289,7 @@ class Mapper {
   using const_iterator = _Iterator<_iterable_const_iterator, typename std::remove_reference_t<Function>>;
   using value_type = typename std::result_of<Function(_iterable_value_type&)>::type;
 
-  Mapper(T&& iterable, Function&& mapping_function)
+  MapIterator(T&& iterable, Function&& mapping_function)
       : iterable_(std::forward<T>(iterable)), mapping_function_(std::forward<Function>(mapping_function)) {
   }
 
@@ -348,11 +354,106 @@ class Mapper {
   Function mapping_function_;
 };
 
-// Applies the mapping-function to all the items in the input list.
-// the mapping-function must take a reference _Iterable::value_type as input.
 template <typename _Iterable, typename Function>
-auto Map(_Iterable&& data, Function mapping_function) -> Mapper<_Iterable, Function> {
-  return Mapper<_Iterable, Function>(std::forward<_Iterable>(data), std::forward<Function>(mapping_function));
+auto Map(_Iterable&& data, Function mapping_function) -> MapIterator<_Iterable, Function> {
+  return MapIterator<_Iterable, Function>(std::forward<_Iterable>(data), std::forward<Function>(mapping_function));
+}
+
+template <typename T, typename FilterFunction>
+class FilterIterator {
+ public:
+  template <class, typename>
+  class _Iterator;
+  using _iterable = typename std::remove_reference_t<T>;
+  using _iterable_const_iterator = typename _iterable::const_iterator;
+  using _iterable_iterator = typename _iterable::iterator;
+
+  using value_type = typename _iterable::value_type;
+  using iterator = _Iterator<_iterable_iterator, typename std::remove_reference_t<FilterFunction>>;
+  using const_iterator = _Iterator<_iterable_const_iterator, typename std::remove_reference_t<FilterFunction>>;
+
+  FilterIterator(T&& iterable, FilterFunction&& filter)
+      : iterable_(std::forward<T>(iterable)), filter_(std::forward<FilterFunction>(filter)) {
+  }
+
+  auto begin() {
+    return MakeIterator(std::begin(iterable_));
+  }
+
+  auto end() {
+    return MakeIterator(std::end(iterable_));
+  }
+
+  auto begin() const {
+    return MakeIterator(std::begin(iterable_));
+  }
+
+  auto end() const {
+    return MakeIterator(std::end(iterable_));
+  }
+
+  template <typename __iterable, typename _function>
+  class _Iterator {
+   public:
+    _Iterator(__iterable begin, __iterable end, const _function& filter) : begin_(begin), end_(end), filter_(filter) {
+      SkipFilteredEntries();
+    }
+
+    auto& operator*() {
+      return *begin_;
+    }
+
+    const auto& operator*() const {
+      return *begin_;
+    }
+
+    void operator++() {
+      ++begin_;
+      SkipFilteredEntries();
+    }
+
+    bool operator==(const _Iterator& other) const {
+      return begin_ == other.begin_;
+    }
+    bool operator!=(const _Iterator& other) const {
+      return !(*this == other);
+    }
+
+   private:
+    bool IsEnd() const {
+      return begin_ == end_;
+    }
+
+    bool IsFiltered() const {
+      return !filter_(*begin_);
+    }
+
+    void SkipFilteredEntries() {
+      while (!IsEnd() && IsFiltered())
+        ++begin_;
+    }
+
+    __iterable begin_;
+    __iterable end_;
+    const _function& filter_;
+  };
+
+ private:
+  const_iterator MakeIterator(_iterable_const_iterator begin_iterator) const {
+    return const_iterator(begin_iterator, std::cend(iterable_), filter_);
+  }
+
+  iterator MakeIterator(_iterable_iterator begin_iterator) {
+    return iterator(begin_iterator, std::end(iterable_), filter_);
+  }
+
+  T iterable_;
+  FilterFunction filter_;
+};
+
+template <typename _Iterable, typename FilterFunction>
+auto Filter(_Iterable&& data, FilterFunction filter) -> FilterIterator<_Iterable, FilterFunction> {
+  return FilterIterator<_Iterable, FilterFunction>(std::forward<_Iterable>(data), std::forward<FilterFunction>(filter));
 }
 
 }  // namespace iterator
