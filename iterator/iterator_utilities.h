@@ -83,6 +83,18 @@ auto Join(T1&& iterable_1, T2&& iterable_2) -> JoinedIterator<T1, T2>;
 template <typename _Iterable, typename Function>
 auto Map(_Iterable&& data, Function mapping_function) -> Mapper<_Iterable, Function>;
 
+// Iterates over the keys of a std::map
+template <typename _Iterable>
+auto MapKeys(_Iterable&& map) {
+  return Map(std::forward<_Iterable>(map), [](const auto& map_pair) { return map_pair.first; });
+}
+
+// Iterates over the values of a std::map
+template <typename _Iterable>
+auto MapValues(_Iterable&& map) {
+  return Map(std::forward<_Iterable>(map), [](const auto& map_pair) { return map_pair.second; });
+}
+
 //-----------------------------------------------------------------------------
 // Implementation
 //-----------------------------------------------------------------------------

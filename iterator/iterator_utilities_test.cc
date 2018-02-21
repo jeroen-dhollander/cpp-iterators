@@ -181,4 +181,16 @@ TEST(MapTest, can_non_const_map_rvalue_collection) {
   EXPECT_THAT(GetNonConstValues(&map), ElementsAre("1", "3", "5"));
 }
 
+TEST(MapTest, MapKeys__extract_keys_from_std_map) {
+  std::map<std::string, int> input{{{"a", 1}, {"b", 2}}};
+
+  EXPECT_THAT(GetConstValues(MapKeys(input)), ElementsAre("a", "b"));
+}
+
+TEST(MapTest, MapValues__extract_values_from_std_map) {
+  std::map<std::string, int> input{{{"a", 1}, {"b", 2}}};
+
+  EXPECT_THAT(GetConstValues(MapValues(input)), ElementsAre(1, 2));
+}
+
 }  // namespace iterator
