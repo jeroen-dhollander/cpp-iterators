@@ -1,0 +1,7 @@
+---
+BasedOnStyle: Google
+AllowShortFunctionsOnASingleLine: 'false'
+AllowShortIfStatementsOnASingleLine: 'false'
+AllowShortLoopsOnASingleLine: 'false'
+ColumnLimit: '120'
+...
