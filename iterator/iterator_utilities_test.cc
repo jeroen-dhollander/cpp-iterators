@@ -22,7 +22,7 @@ list<int> AnyCollectionReversed() {
 template <typename _Iterable>
 auto GetConstValues(const _Iterable& iterable) -> std::list<typename _Iterable::value_type> {
   std::list<typename _Iterable::value_type> values{};
-  for (const int& value : iterable)
+  for (const auto& value : iterable)
     values.push_back(value);
   return values;
 }
@@ -30,16 +30,15 @@ auto GetConstValues(const _Iterable& iterable) -> std::list<typename _Iterable::
 template <typename _Iterable>
 auto GetNonConstValues(_Iterable* iterable) -> std::list<typename _Iterable::value_type> {
   std::list<typename _Iterable::value_type> values{};
-  for (int& value : *iterable)
+  for (auto& value : *iterable)
     values.push_back(value);
   return values;
 }
 
 TEST(IterateTest, can_iterate_const_collection) {
   list<int> collection{AnyCollection()};
-  const auto& const_collection = collection;
 
-  auto const_iterator = Iterate(const_collection);
+  auto const_iterator = Iterate(std::as_const(collection));
   EXPECT_THAT(GetConstValues(const_iterator), ElementsAreArray(collection));
 }
 
@@ -69,9 +68,8 @@ TEST(IterateTest, can_non_const_iterate_rvalue_collection) {
 
 TEST(ReverseTest, can_iterate_const_collection) {
   list<int> collection{AnyCollection()};
-  const auto& const_collection = collection;
 
-  auto const_iterator = Reverse(const_collection);
+  auto const_iterator = Reverse(std::as_const(collection));
   EXPECT_THAT(GetConstValues(const_iterator), ElementsAreArray(AnyCollectionReversed()));
 }
 
@@ -136,6 +134,51 @@ TEST(JoinTest, can_const_iterate_2_rvalue_collection) {
 TEST(JoinTest, can_non_const_iterate_2_rvalue_collection) {
   auto iterator = Join(list<int>{1, 2, 3}, vector<int>{4, 5, 6});
   EXPECT_THAT(GetNonConstValues(&iterator), ElementsAre(1, 2, 3, 4, 5, 6));
+}
+
+TEST(MapTest, can_const_map_const_collection) {
+  std::list<int> input{1, 3, 5};
+
+  auto map = Map(std::as_const(input), [](const auto& value) { return std::to_string(value); });
+  EXPECT_THAT(GetConstValues(map), ElementsAre("1", "3", "5"));
+}
+
+TEST(MapTest, can_non_const_map_const_collection) {
+  // Note it might seem weird we can non-const iterate over a const-collection,
+  // but in reality we're not iterating over the collection,
+  // we're actually iterating over the return values of the mapping-function
+  std::list<int> input{1, 3, 5};
+
+  auto map = Map(std::as_const(input), [](const auto& value) { return std::to_string(value); });
+  EXPECT_THAT(GetNonConstValues(&map), ElementsAre("1", "3", "5"));
+}
+
+TEST(MapTest, can_const_map_non_const_collection) {
+  std::list<int> input{1, 3, 5};
+
+  auto map = Map(input, [](const auto& value) { return std::to_string(value); });
+  EXPECT_THAT(GetConstValues(map), ElementsAre("1", "3", "5"));
+}
+
+TEST(MapTest, can_non_const_map_non_const_collection) {
+  std::list<int> input{1, 3, 5};
+
+  auto map = Map(input, [](const auto& value) { return std::to_string(value); });
+  EXPECT_THAT(GetNonConstValues(&map), ElementsAre("1", "3", "5"));
+}
+
+TEST(MapTest, can_const_map_rvalue_collection) {
+  std::list<int> input{1, 3, 5};
+
+  auto map = Map(std::move(input), [](const auto& value) { return std::to_string(value); });
+  EXPECT_THAT(GetConstValues(map), ElementsAre("1", "3", "5"));
+}
+
+TEST(MapTest, can_non_const_map_rvalue_collection) {
+  std::list<int> input{1, 3, 5};
+
+  auto map = Map(std::move(input), [](const auto& value) { return std::to_string(value); });
+  EXPECT_THAT(GetNonConstValues(&map), ElementsAre("1", "3", "5"));
 }
 
 }  // namespace iterator

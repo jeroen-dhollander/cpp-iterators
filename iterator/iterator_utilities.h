@@ -14,6 +14,8 @@ template <class>
 class Iterator;
 template <class, class>
 class JoinedIterator;
+template <class, typename>
+class Mapper;
 
 // Allows you to return an iterator over a collection, without actually having to expose access to the collection
 // itself.
@@ -67,17 +69,32 @@ auto Reverse(T&& iterable) -> ReverseIterator<T>;
 template <typename T1, typename T2>
 auto Join(T1&& iterable_1, T2&& iterable_2) -> JoinedIterator<T1, T2>;
 
+// Applies the mapping-function to all the items in the input list.
+// the mapping-function must take a reference _Iterable::value_type as input.
+//
+// Simply write this:
+//
+// std::list<int> collection = ...;
+// for (std::string string_value : Map(collection, [](const auto & int_value) { return std::to_string(int_value); }))
+// {
+//       // do-something
+// }
+//
+template <typename _Iterable, typename Function>
+auto Map(_Iterable&& data, Function mapping_function) -> Mapper<_Iterable, Function>;
+
 //-----------------------------------------------------------------------------
 // Implementation
 //-----------------------------------------------------------------------------
 
 template <typename T>
-struct Iterator {
+class Iterator {
  public:
-  using _Iterable = typename std::remove_reference_t<T>;
-  using value_type = typename _Iterable::value_type;
-  using const_iterator = typename _Iterable::const_iterator;
-  using iterator = typename _Iterable::iterator;
+  using _iterable = typename std::remove_reference_t<T>;
+
+  using value_type = typename _iterable::value_type;
+  using const_iterator = typename _iterable::const_iterator;
+  using iterator = typename _iterable::iterator;
 
   explicit Iterator(T&& iterable) : iterable_(std::forward<T>(iterable)) {
   }
@@ -108,12 +125,13 @@ auto Iterate(T&& iterable) -> Iterator<T> {
 }
 
 template <typename T>
-struct ReverseIterator {
+class ReverseIterator {
  public:
-  using _Iterable = typename std::remove_reference_t<T>;
-  using value_type = typename _Iterable::value_type;
-  using const_iterator = typename _Iterable::const_reverse_iterator;
-  using iterator = typename _Iterable::reverse_iterator;
+  using _iterable = typename std::remove_reference_t<T>;
+
+  using value_type = typename _iterable::value_type;
+  using const_iterator = typename _iterable::const_reverse_iterator;
+  using iterator = typename _iterable::reverse_iterator;
 
   explicit ReverseIterator(T&& iterable) : iterable_(std::forward<T>(iterable)) {
   }
@@ -237,6 +255,92 @@ class JoinedIterator {
 template <typename T1, typename T2>
 auto Join(T1&& iterable_1, T2&& iterable_2) -> JoinedIterator<T1, T2> {
   return JoinedIterator<T1, T2>{std::forward<T1>(iterable_1), std::forward<T2>(iterable_2)};
+}
+
+template <typename T, typename Function>
+class Mapper {
+ public:
+  template <class, typename>
+  class _Iterator;
+  using _iterable = typename std::remove_reference_t<T>;
+  using _iterable_value_type = typename _iterable::value_type;
+  using _iterable_const_iterator = typename _iterable::const_iterator;
+  using _iterable_iterator = typename _iterable::iterator;
+
+  using iterator = _Iterator<_iterable_iterator, typename std::remove_reference_t<Function>>;
+  using const_iterator = _Iterator<_iterable_const_iterator, typename std::remove_reference_t<Function>>;
+  using value_type = typename std::result_of<Function(_iterable_value_type&)>::type;
+
+  Mapper(T&& iterable, Function&& mapping_function)
+      : iterable_(std::forward<T>(iterable)), mapping_function_(std::forward<Function>(mapping_function)) {
+  }
+
+  auto begin() {
+    return MakeIterator(std::begin(iterable_));
+  }
+
+  auto end() {
+    return MakeIterator(std::end(iterable_));
+  }
+
+  auto begin() const {
+    return MakeIterator(std::begin(iterable_));
+  }
+
+  auto end() const {
+    return MakeIterator(std::end(iterable_));
+  }
+
+  template <typename __iterable, typename _function>
+  class _Iterator {
+   public:
+    _Iterator(__iterable begin, __iterable end, const _function& mapping_function)
+        : begin_(begin), end_(end), mapping_function_(mapping_function) {
+    }
+
+    auto operator*() {
+      return mapping_function_(*begin_);
+    }
+
+    const auto& operator*() const {
+      return mapping_function_(*begin_);
+    }
+
+    void operator++() {
+      ++begin_;
+    }
+
+    bool operator==(const _Iterator& other) const {
+      return begin_ == other.begin_;
+    }
+    bool operator!=(const _Iterator& other) const {
+      return !(*this == other);
+    }
+
+   private:
+    __iterable begin_;
+    __iterable end_;
+    const _function& mapping_function_;
+  };
+
+ private:
+  const_iterator MakeIterator(_iterable_const_iterator begin_iterator) const {
+    return const_iterator(begin_iterator, std::cend(iterable_), mapping_function_);
+  }
+
+  iterator MakeIterator(_iterable_iterator begin_iterator) {
+    return iterator(begin_iterator, std::end(iterable_), mapping_function_);
+  }
+
+  T iterable_;
+  Function mapping_function_;
+};
+
+// Applies the mapping-function to all the items in the input list.
+// the mapping-function must take a reference _Iterable::value_type as input.
+template <typename _Iterable, typename Function>
+auto Map(_Iterable&& data, Function mapping_function) -> Mapper<_Iterable, Function> {
+  return Mapper<_Iterable, Function>(std::forward<_Iterable>(data), std::forward<Function>(mapping_function));
 }
 
 }  // namespace iterator
