@@ -193,6 +193,20 @@ TEST(MapTest, MapValues__extract_values_from_std_map) {
   EXPECT_THAT(GetConstValues(MapValues(input)), ElementsAre(1, 2));
 }
 
+TEST(FilterTest, can_filter_first_value) {
+  std::list<int> input{1, 2};
+  auto filter_function = [](const int& value) { return value > 1; };
+
+  EXPECT_THAT(GetConstValues(Filter(input, filter_function)), ElementsAre(2));
+}
+
+TEST(FilterTest, can_filter_consecutive_values) {
+  std::list<int> input{1, 2, 3, 4, 5};
+  auto filter_function = [](const int& value) { return value == 1 || value == 5; };
+
+  EXPECT_THAT(GetConstValues(Filter(input, filter_function)), ElementsAre(1, 5));
+}
+
 TEST(FilterTest, can_const_filter_const_collection) {
   std::list<int> input{1, 2, 3, 4, 5};
   auto filter_function = [](const int& value) { return value % 2 == 0; };
