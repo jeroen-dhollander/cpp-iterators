@@ -9,15 +9,15 @@
 
 namespace iterator {
 template <class>
-class ReverseIterator;
+class Reversed;
 template <class>
-class Iterator;
+class Iterated;
 template <class, class>
-class JoinedIterator;
+class Joined;
 template <class, typename>
-class MapIterator;
+class Mapped;
 template <class, typename>
-class FilterIterator;
+class Filtered;
 
 // Allows you to return an iterator over a collection, without actually having to expose access to the collection
 // itself.
@@ -43,7 +43,7 @@ class FilterIterator;
 //         MyCollection stuff_;
 // };
 template <typename T>
-auto Iterate(T&& iterable) -> Iterator<T>;
+auto Iterate(T&& iterable) -> Iterated<T>;
 
 // Allows you to iterate back-to-front over a collection
 //
@@ -54,7 +54,7 @@ auto Iterate(T&& iterable) -> Iterator<T>;
 //      // do-something
 // }
 template <typename T>
-auto Reverse(T&& iterable) -> ReverseIterator<T>;
+auto Reverse(T&& iterable) -> Reversed<T>;
 
 //
 // Allows you to iterate over 2 collections.
@@ -69,7 +69,7 @@ auto Reverse(T&& iterable) -> ReverseIterator<T>;
 // }
 //
 template <typename T1, typename T2>
-auto Join(T1&& iterable_1, T2&& iterable_2) -> JoinedIterator<T1, T2>;
+auto Join(T1&& iterable_1, T2&& iterable_2) -> Joined<T1, T2>;
 
 // Applies the mapping-function to all the items in the input list.
 // the mapping-function must take a reference _Iterable::value_type as input.
@@ -83,7 +83,7 @@ auto Join(T1&& iterable_1, T2&& iterable_2) -> JoinedIterator<T1, T2>;
 // }
 //
 template <typename _Iterable, typename Function>
-auto Map(_Iterable&& data, Function mapping_function) -> MapIterator<_Iterable, Function>;
+auto Map(_Iterable&& data, Function mapping_function) -> Mapped<_Iterable, Function>;
 
 // Iterates over the keys of a std::map
 template <typename _Iterable>
@@ -97,16 +97,16 @@ auto MapValues(_Iterable&& map) {
   return Map(std::forward<_Iterable>(map), [](const auto& map_pair) { return map_pair.second; });
 }
 
-// Returns the elements for which filter(element) returns 'true'
+// Returns an iterator over the elements for which filter(element) returns 'true'
 template <typename _Iterable, typename FilterFunction>
-auto Filter(_Iterable&& data, FilterFunction filter) -> FilterIterator<_Iterable, FilterFunction>;
+auto Filter(_Iterable&& data, FilterFunction filter) -> Filtered<_Iterable, FilterFunction>;
 
 //-----------------------------------------------------------------------------
 // Implementation
 //-----------------------------------------------------------------------------
 
 template <typename T>
-class Iterator {
+class Iterated {
  public:
   using _iterable = typename std::remove_reference_t<T>;
 
@@ -114,7 +114,7 @@ class Iterator {
   using const_iterator = typename _iterable::const_iterator;
   using iterator = typename _iterable::iterator;
 
-  explicit Iterator(T&& iterable) : iterable_(std::forward<T>(iterable)) {
+  explicit Iterated(T&& iterable) : iterable_(std::forward<T>(iterable)) {
   }
 
   auto begin() {
@@ -138,12 +138,12 @@ class Iterator {
 };
 
 template <typename T>
-auto Iterate(T&& iterable) -> Iterator<T> {
-  return Iterator<T>{std::forward<T>(iterable)};
+auto Iterate(T&& iterable) -> Iterated<T> {
+  return Iterated<T>{std::forward<T>(iterable)};
 }
 
 template <typename T>
-class ReverseIterator {
+class Reversed {
  public:
   using _iterable = typename std::remove_reference_t<T>;
 
@@ -151,7 +151,7 @@ class ReverseIterator {
   using const_iterator = typename _iterable::const_reverse_iterator;
   using iterator = typename _iterable::reverse_iterator;
 
-  explicit ReverseIterator(T&& iterable) : iterable_(std::forward<T>(iterable)) {
+  explicit Reversed(T&& iterable) : iterable_(std::forward<T>(iterable)) {
   }
 
   auto begin() {
@@ -175,12 +175,12 @@ class ReverseIterator {
 };
 
 template <typename T>
-auto Reverse(T&& iterable) -> ReverseIterator<T> {
-  return ReverseIterator<T>{std::forward<T>(iterable)};
+auto Reverse(T&& iterable) -> Reversed<T> {
+  return Reversed<T>{std::forward<T>(iterable)};
 }
 
 template <class T1, class T2>
-class JoinedIterator {
+class Joined {
  public:
   template <class, class>
   class _Iterator;
@@ -199,7 +199,7 @@ class JoinedIterator {
   static_assert((std::is_same<typename _iterable_1::value_type, typename _iterable_2::value_type>::value),
                 "value_type must be same type for both collections");
 
-  JoinedIterator(T1&& data_1, T2&& data_2) : first_(std::forward<T1>(data_1)), second_(std::forward<T2>(data_2)) {
+  Joined(T1&& data_1, T2&& data_2) : first_(std::forward<T1>(data_1)), second_(std::forward<T2>(data_2)) {
   }
 
   auto begin() {
@@ -271,12 +271,12 @@ class JoinedIterator {
 };
 
 template <typename T1, typename T2>
-auto Join(T1&& iterable_1, T2&& iterable_2) -> JoinedIterator<T1, T2> {
-  return JoinedIterator<T1, T2>{std::forward<T1>(iterable_1), std::forward<T2>(iterable_2)};
+auto Join(T1&& iterable_1, T2&& iterable_2) -> Joined<T1, T2> {
+  return Joined<T1, T2>{std::forward<T1>(iterable_1), std::forward<T2>(iterable_2)};
 }
 
 template <typename T, typename Function>
-class MapIterator {
+class Mapped {
  public:
   template <class, typename>
   class _Iterator;
@@ -289,7 +289,7 @@ class MapIterator {
   using const_iterator = _Iterator<_iterable_const_iterator, typename std::remove_reference_t<Function>>;
   using value_type = typename std::result_of<Function(_iterable_value_type&)>::type;
 
-  MapIterator(T&& iterable, Function&& mapping_function)
+  Mapped(T&& iterable, Function&& mapping_function)
       : iterable_(std::forward<T>(iterable)), mapping_function_(std::forward<Function>(mapping_function)) {
   }
 
@@ -355,12 +355,12 @@ class MapIterator {
 };
 
 template <typename _Iterable, typename Function>
-auto Map(_Iterable&& data, Function mapping_function) -> MapIterator<_Iterable, Function> {
-  return MapIterator<_Iterable, Function>(std::forward<_Iterable>(data), std::forward<Function>(mapping_function));
+auto Map(_Iterable&& data, Function mapping_function) -> Mapped<_Iterable, Function> {
+  return Mapped<_Iterable, Function>(std::forward<_Iterable>(data), std::forward<Function>(mapping_function));
 }
 
 template <typename T, typename FilterFunction>
-class FilterIterator {
+class Filtered {
  public:
   template <class, typename>
   class _Iterator;
@@ -372,7 +372,7 @@ class FilterIterator {
   using iterator = _Iterator<_iterable_iterator, typename std::remove_reference_t<FilterFunction>>;
   using const_iterator = _Iterator<_iterable_const_iterator, typename std::remove_reference_t<FilterFunction>>;
 
-  FilterIterator(T&& iterable, FilterFunction&& filter)
+  Filtered(T&& iterable, FilterFunction&& filter)
       : iterable_(std::forward<T>(iterable)), filter_(std::forward<FilterFunction>(filter)) {
   }
 
@@ -452,8 +452,8 @@ class FilterIterator {
 };
 
 template <typename _Iterable, typename FilterFunction>
-auto Filter(_Iterable&& data, FilterFunction filter) -> FilterIterator<_Iterable, FilterFunction> {
-  return FilterIterator<_Iterable, FilterFunction>(std::forward<_Iterable>(data), std::forward<FilterFunction>(filter));
+auto Filter(_Iterable&& data, FilterFunction filter) -> Filtered<_Iterable, FilterFunction> {
+  return Filtered<_Iterable, FilterFunction>(std::forward<_Iterable>(data), std::forward<FilterFunction>(filter));
 }
 
 }  // namespace iterator
