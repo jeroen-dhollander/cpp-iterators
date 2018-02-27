@@ -9,6 +9,8 @@
 
 namespace iterator {
 template <class>
+class Enumerated;
+template <class>
 class Reversed;
 template <class>
 class Iterated;
@@ -18,6 +20,27 @@ template <class, typename>
 class Mapped;
 template <class, typename>
 class Filtered;
+
+//
+// Allows you to enumerate over the elements of a given collection.
+//
+// This means that iterating over the returned object will return
+// iterator objects with 2 fields:
+//    - the position of the element in the collection
+//    - a reference to the value of the element
+//
+// For example, this:
+//
+// vector<char> values {{'A', 'B', 'C'}};
+// for (const auto & item: Enumerate(values))
+//     printf("%u: %c\n", item.position, item.value);
+//
+// will print
+//     0: A
+//     1: B
+//     2: C
+template <typename T>
+auto Enumerate(T&& iterable) -> Enumerated<T>;
 
 // Allows you to return an iterator over a collection, without actually having to expose access to the collection
 // itself.
@@ -104,6 +127,164 @@ auto Filter(_Iterable&& data, FilterFunction filter) -> Filtered<_Iterable, Filt
 //-----------------------------------------------------------------------------
 // Implementation
 //-----------------------------------------------------------------------------
+
+template <typename T>
+class Enumerated {
+ public:
+  struct Item;
+  using _collection_type = typename std::remove_reference<T>::type;
+  using _collection_value_type = typename _collection_type::value_type;
+  using _collection_const_iterator = typename _collection_type::const_iterator;
+  using _collection_iterator = typename _collection_type::iterator;
+
+  class iterator;
+  class const_iterator;
+  using value_type = Item;
+
+  // Return value when iterating a non-const version
+  struct Item {
+    int position;
+    _collection_value_type& value;
+  };
+  // Return value when iterating a const version
+  struct ConstItem {
+    int position;
+    const _collection_value_type& value;
+  };
+  // Used so we can update the stored item
+  struct PointerItem {
+    int position;
+    const _collection_value_type* value;
+  };
+  // Internal representation of an item
+  union UnionItem {
+    UnionItem() : pointer_item() {
+    }
+
+    ConstItem const_item;
+    Item item;
+    PointerItem pointer_item;
+  };
+
+  explicit Enumerated(T&& iterable) : iterable_(std::forward<T>(iterable)) {
+  }
+
+  auto begin() const {
+    return MakeIterator(std::begin(iterable_));
+  }
+
+  auto end() const {
+    return MakeIterator(std::end(iterable_));
+  }
+
+  auto begin() {
+    return MakeIterator(std::begin(iterable_));
+  }
+
+  auto end() {
+    return MakeIterator(std::end(iterable_));
+  }
+
+  class iterator {
+   public:
+    iterator(_collection_iterator begin, _collection_iterator end, int position)
+        : begin_(begin), end_(end), position_(position), item_{} {
+      SetItem();
+    }
+
+    Item& operator*() {
+      return item_.item;
+    }
+
+    const Item& operator*() const {
+      return item_.item;
+    }
+
+    void operator++() {
+      ++begin_;
+      ++position_;
+      SetItem();
+    }
+
+    bool operator==(const iterator& other) const {
+      return begin_ == other.begin_;
+    }
+    bool operator!=(const iterator& other) const {
+      return !(*this == other);
+    }
+
+   private:
+    void SetItem() {
+      if (begin_ != end_)
+        item_.pointer_item = PointerItem{position_, &*begin_};
+    }
+
+    _collection_iterator begin_;
+    _collection_iterator end_;
+    int position_;
+    UnionItem item_;
+  };
+
+  class const_iterator {
+   public:
+    const_iterator(_collection_const_iterator begin, _collection_const_iterator end, int position)
+        : begin_(begin), end_(end), position_(position), item_{} {
+      SetItem();
+    }
+
+    ConstItem& operator*() {
+      return item_.const_item;
+    }
+
+    const ConstItem& operator*() const {
+      return item_.item;
+    }
+
+    void operator++() {
+      ++begin_;
+      ++position_;
+      SetItem();
+    }
+
+    bool operator==(const const_iterator& other) const {
+      return begin_ == other.begin_;
+    }
+    bool operator!=(const const_iterator& other) const {
+      return !(*this == other);
+    }
+
+   private:
+    void SetItem() {
+      if (begin_ != end_)
+        item_.pointer_item = PointerItem{position_, &*begin_};
+    }
+
+    _collection_const_iterator begin_;
+    _collection_const_iterator end_;
+    int position_;
+    UnionItem item_;
+  };
+
+ private:
+  const_iterator MakeIterator(_collection_const_iterator begin) const {
+    return const_iterator(begin, std::end(iterable_), 0);
+  }
+
+  const_iterator MakeIterator(_collection_const_iterator begin) {
+    return const_iterator(begin, std::end(iterable_), 0);
+  }
+
+  iterator MakeIterator(_collection_iterator begin) {
+    return iterator(begin, std::end(iterable_), 0);
+  }
+
+  T iterable_;
+};
+
+template <typename T>
+auto Enumerate(T&& iterable) -> Enumerated<T> {
+  return Enumerated<T>{std::forward<T>(iterable)};
+}
 
 template <typename T>
 class Iterated {

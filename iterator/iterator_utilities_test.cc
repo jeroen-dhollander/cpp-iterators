@@ -50,6 +50,63 @@ auto AppendAll(_Iterable* iterable, string suffix) {
   return result;
 }
 
+template <typename _Enumerator>
+string FormatEnumerate(const _Enumerator& iterable) {
+  string result{};
+  for (const auto& item : iterable)
+    result += std::to_string(item.position) + ": " + item.value + ", ";
+  return result;
+}
+
+// Executes '++' on the values of the enumerator.
+// Used to verify we can actually modify the values
+template <typename _Enumerator>
+auto IncrementValues(_Enumerator* iterable) {
+  for (auto& item : *iterable)
+    item.value++;
+  return *iterable;
+}
+
+TEST(EnumerateTest, can_enumerate_const_collection) {
+  vector<char> collection{'A', 'B', 'C'};
+  string expected{"0: A, 1: B, 2: C, "};
+
+  const auto& const_collection = collection;
+
+  auto const_iterator = Enumerate(const_collection);
+  EXPECT_EQ(expected, FormatEnumerate(const_iterator));
+}
+
+TEST(EnumerateTest, can_const_enumerate_non_const_collection) {
+  vector<char> collection{'A', 'B', 'C'};
+  string expected{"0: A, 1: B, 2: C, "};
+
+  auto iterator = Enumerate(collection);
+  EXPECT_EQ(expected, FormatEnumerate(iterator));
+}
+
+TEST(EnumerateTest, can_non_const_enumerate_non_const_collection) {
+  vector<char> collection{'A', 'B', 'C'};
+  string expected{"0: B, 1: C, 2: D, "};
+
+  auto iterator = Enumerate(collection);
+  EXPECT_EQ(expected, FormatEnumerate(IncrementValues(&iterator)));
+}
+
+TEST(EnumerateTest, can_const_enumerate_rvalue_collection) {
+  auto iterator = Enumerate(vector<char>{'A', 'B', 'C'});
+  string expected{"0: A, 1: B, 2: C, "};
+
+  EXPECT_EQ(expected, FormatEnumerate(iterator));
+}
+
+TEST(EnumerateTest, can_non_const_enumerate_rvalue_collection) {
+  auto iterator = Enumerate(vector<char>{'A', 'B', 'C'});
+  string expected{"0: B, 1: C, 2: D, "};
+
+  EXPECT_EQ(expected, FormatEnumerate(IncrementValues(&iterator)));
+}
+
 TEST(IterateTest, can_iterate_const_collection) {
   list<int> collection{AnyCollection()};
 
@@ -251,3 +308,4 @@ TEST(FilterTest, can_non_const_filter_rvalue_collection) {
 }
 
 }  // namespace iterator
+
