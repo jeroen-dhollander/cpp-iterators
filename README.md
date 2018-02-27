@@ -9,7 +9,7 @@ Iterator based utilities to allow using manipulated iterators (reversed/enumerat
   <br />
   To the extent possible under law,
   <a rel="dct:publisher"
-     href="https://github.com/jeroen-dhollander/iterator-utils">
+     href="https://github.com/jeroen-dhollander">
     <span property="dct:title">Jeroen Dhollander</span></a>
   has waived all copyright and related or neighboring rights to
   <span property="dct:title">Iterator-utilities</span>.
