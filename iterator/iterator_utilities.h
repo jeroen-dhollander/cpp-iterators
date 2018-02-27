@@ -4,6 +4,7 @@
 #define _ITERATOR_UTILITIES_H_
 
 #include <iterator>
+#include <memory>
 #include <type_traits>
 #include <utility>
 
@@ -11,15 +12,39 @@ namespace iterator {
 template <class>
 class Enumerated;
 template <class>
-class Reversed;
-template <class>
 class Iterated;
+template <class>
+class ReferencedUnique;
+template <class>
+class Referenced;
+template <class>
+class Reversed;
 template <class, class>
 class Joined;
 template <class, typename>
 class Mapped;
 template <class, typename>
 class Filtered;
+
+namespace details {
+template <class T>
+struct is_unique_pointer_helper : std::false_type {};
+template <class T>
+struct is_unique_pointer_helper<std::unique_ptr<T>> : std::true_type {};
+template <class T>
+struct is_unique_pointer : is_unique_pointer_helper<typename std::remove_cv_t<T>> {};
+
+template <class T>
+struct remove_cvref {
+  typedef std::remove_cv_t<std::remove_reference_t<T>> type;
+};
+template <class T>
+using remove_cvref_t = typename remove_cvref<T>::type;
+
+template <class T>
+struct is_unique_pointer_collection : is_unique_pointer<typename remove_cvref_t<T>::value_type> {};
+
+}  // namespace details
 
 //
 // Allows you to enumerate over the elements of a given collection.
@@ -67,6 +92,34 @@ auto Enumerate(T&& iterable) -> Enumerated<T>;
 // };
 template <typename T>
 auto Iterate(T&& iterable) -> Iterated<T>;
+
+// Allows you to iterate over a collection of pointers using references
+//
+// This is a nice way to hide how you internally store your objects.
+//
+// Simply write this:
+//
+// vector<MyObject*> collection_of_pointers
+// for (const MyObject & object : ToReference(collection_of_pointers))
+// {
+//      // do-something
+// }
+template <typename T, typename std::enable_if_t<!details::is_unique_pointer_collection<T>::value, int> = 1>
+auto ToReference(T&& iterable) -> Referenced<T>;
+
+// Allows you to iterate over a collection of unique_ptr's using references
+//
+// This is a nice way to hide how you internally store your objects.
+//
+// Simply write this:
+//
+// vector<std::unique_ptr<MyObject>> collection_of_unique_pointers
+// for (const MyObject & object : ToReference(collection_of_unique_pointers))
+// {
+//      // do-something
+// }
+template <typename T, typename std::enable_if_t<details::is_unique_pointer_collection<T>::value, int> = 1>
+auto ToReference(T&& iterable) -> ReferencedUnique<T>;
 
 // Allows you to iterate back-to-front over a collection
 //
@@ -321,6 +374,174 @@ class Iterated {
 template <typename T>
 auto Iterate(T&& iterable) -> Iterated<T> {
   return Iterated<T>{std::forward<T>(iterable)};
+}
+
+template <typename T>
+class Referenced {
+ public:
+  template <class>
+  class _Iterator;
+
+  using _collection_type = typename std::remove_reference_t<T>;
+  using _collection_value_type = std::remove_pointer_t<typename _collection_type::value_type>;
+  using _collection_const_iterator = typename _collection_type::const_iterator;
+  using _collection_iterator = typename _collection_type::iterator;
+
+  using value_type = _collection_value_type;
+  using const_iterator = _Iterator<_collection_const_iterator>;
+  using iterator = _Iterator<_collection_iterator>;
+
+  explicit Referenced(T&& iterable) : iterable_(std::forward<T>(iterable)) {
+  }
+
+  auto begin() {
+    return MakeIterator(std::begin(iterable_));
+  }
+
+  auto end() {
+    return MakeIterator(std::end(iterable_));
+  }
+
+  auto begin() const {
+    return MakeIterator(std::begin(iterable_));
+  }
+
+  auto end() const {
+    return MakeIterator(std::end(iterable_));
+  }
+
+  template <class __iterator>
+  class _Iterator {
+   public:
+    _Iterator(__iterator begin, __iterator end) : begin_(begin), end_(end) {
+    }
+
+    value_type& operator*() {
+      return **begin_;
+    }
+
+    const value_type& operator*() const {
+      return **begin_;
+    }
+
+    void operator++() {
+      ++begin_;
+    }
+
+    bool operator==(const _Iterator& other) const {
+      return begin_ == other.begin_;
+    }
+    bool operator!=(const _Iterator& other) const {
+      return !(*this == other);
+    }
+
+   private:
+    __iterator begin_;
+    __iterator end_;
+  };
+
+ private:
+  const_iterator MakeIterator(_collection_const_iterator begin_iterator) const {
+    return const_iterator(begin_iterator, std::cend(iterable_));
+  }
+
+  iterator MakeIterator(_collection_iterator begin_iterator) {
+    return iterator(begin_iterator, std::end(iterable_));
+  }
+
+ private:
+  T iterable_;
+};
+
+template <typename T, typename std::enable_if_t<!details::is_unique_pointer_collection<T>::value, int>>
+auto ToReference(T&& iterable) -> Referenced<T> {
+  return Referenced<T>{std::forward<T>(iterable)};
+}
+
+template <typename T>
+class ReferencedUnique {
+ public:
+  template <class>
+  class _Iterator;
+
+  using _collection_type = typename std::remove_reference_t<T>;
+  using _collection_value_type = typename _collection_type::value_type;
+  using _collection_const_iterator = typename _collection_type::const_iterator;
+  using _collection_iterator = typename _collection_type::iterator;
+
+  using value_type = typename _collection_value_type::element_type;
+  using const_iterator = _Iterator<_collection_const_iterator>;
+  using iterator = _Iterator<_collection_iterator>;
+
+  explicit ReferencedUnique(T&& iterable) : iterable_(std::forward<T>(iterable)) {
+  }
+
+  auto begin() {
+    return MakeIterator(std::begin(iterable_));
+  }
+
+  auto end() {
+    return MakeIterator(std::end(iterable_));
+  }
+
+  auto begin() const {
+    return MakeIterator(std::begin(iterable_));
+  }
+
+  auto end() const {
+    return MakeIterator(std::end(iterable_));
+  }
+
+  template <class __iterator>
+  class _Iterator {
+   public:
+    _Iterator(__iterator begin, __iterator end) : begin_(begin), end_(end) {
+    }
+
+    value_type& operator*() {
+      auto& unique_pointer = *begin_;
+      auto pointer = unique_pointer.get();
+      return *pointer;
+    }
+
+    const value_type& operator*() const {
+      const auto& unique_pointer = *begin_;
+      auto pointer = unique_pointer.get();
+      return *pointer;
+    }
+
+    void operator++() {
+      ++begin_;
+    }
+
+    bool operator==(const _Iterator& other) const {
+      return begin_ == other.begin_;
+    }
+    bool operator!=(const _Iterator& other) const {
+      return !(*this == other);
+    }
+
+   private:
+    __iterator begin_;
+    __iterator end_;
+  };
+
+ private:
+  const_iterator MakeIterator(_collection_const_iterator begin_iterator) const {
+    return const_iterator(begin_iterator, std::cend(iterable_));
+  }
+
+  iterator MakeIterator(_collection_iterator begin_iterator) {
+    return iterator(begin_iterator, std::end(iterable_));
+  }
+
+ private:
+  T iterable_;
+};
+
+template <typename T, typename std::enable_if_t<details::is_unique_pointer_collection<T>::value, int>>
+auto ToReference(T&& iterable) -> ReferencedUnique<T> {
+  return ReferencedUnique<T>{std::forward<T>(iterable)};
 }
 
 template <typename T>
