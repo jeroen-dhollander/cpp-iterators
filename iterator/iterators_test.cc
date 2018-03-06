@@ -30,7 +30,8 @@ auto& IncreaseAll(_Iterable* iterable) {
   return *iterable;
 }
 
-// Doubles each value
+// Doubles each value in the iterable.
+// Used to ensure we can non-const access the elements
 template <typename _Iterable>
 auto DoubleAll(_Iterable* iterable) {
   for (auto& value : *iterable)
@@ -59,7 +60,7 @@ string FormatEnumerate(const _Enumerator& iterable) {
 }
 
 // Executes '++' on the values of the enumerator.
-// Used to verify we can actually modify the values
+// Used to ensure we can non-const access the elements
 template <typename _Enumerator>
 auto IncrementValues(_Enumerator* iterable) {
   for (auto& item : *iterable)
@@ -392,6 +393,67 @@ TEST(ToReference_unique_ptr, can_non_const_iterate_rvalue_pointer_collection) {
 
   auto result = ToReference(std::move(input));
   EXPECT_THAT(IncreaseAll(&result), ElementsAre(2, 4, 6));
+}
+
+TEST(ChainTest, can_iterate_non_empty_collections) {
+  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+
+  auto result = Chain(collection);
+  EXPECT_THAT(result, ElementsAre(1, 2, 3, 4, 5, 6));
+}
+
+TEST(ChainTest, skips_over_empty_first_collections) {
+  vector<list<int>> collection{{}, {}, {1, 2, 3}};
+
+  auto result = Chain(collection);
+  EXPECT_THAT(result, ElementsAre(1, 2, 3));
+}
+
+TEST(ChainTest, skips_over_empty_collections) {
+  vector<list<int>> collection{{1}, {}, {}, {2, 3}, {}};
+
+  auto result = Chain(collection);
+  EXPECT_THAT(result, ElementsAre(1, 2, 3));
+}
+
+TEST(ChainTest, survives_empty_outer_collection) {
+  vector<list<int>> collection{};
+
+  auto result = Chain(collection);
+  EXPECT_THAT(result, ElementsAre());
+}
+
+TEST(ChainTest, can_iterate_const_collections) {
+  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+
+  auto result = Chain(std::as_const(collection));
+  EXPECT_THAT(std::as_const(result), ElementsAre(1, 2, 3, 4, 5, 6));
+}
+
+TEST(ChainTest, can_const_iterate_non_const_collection) {
+  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+
+  auto result = Chain(collection);
+  EXPECT_THAT(std::as_const(result), ElementsAre(1, 2, 3, 4, 5, 6));
+}
+
+TEST(ChainTest, can_non_const_iterate_non_const_collection) {
+  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+
+  auto result = Chain(collection);
+  EXPECT_THAT(DoubleAll(&result), ElementsAre(2, 4, 6, 8, 10, 12));
+}
+
+TEST(ChainTest, can_const_iterate_rvalue_collection) {
+  auto result = Chain(vector<list<int>>{{1, 2, 3}, {4, 5, 6}});
+
+  EXPECT_THAT(std::as_const(result), ElementsAre(1, 2, 3, 4, 5, 6));
+}
+
+TEST(ChainTest, can_non_const_iterate_rvalue_collection) {
+  auto result = Chain(vector<list<int>>{{1, 2, 3}, {4, 5, 6}});
+
+  EXPECT_THAT(DoubleAll(&result), ElementsAre(2, 4, 6, 8, 10, 12));
 }
 
 }  // namespace iterator

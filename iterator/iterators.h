@@ -10,6 +10,8 @@
 
 namespace iterator {
 template <class>
+class Chained;
+template <class>
 class Enumerated;
 template <class>
 class Iterated;
@@ -46,7 +48,6 @@ struct is_unique_pointer_collection : is_unique_pointer<typename remove_cvref_t<
 
 }  // namespace details
 
-//
 // Allows you to enumerate over the elements of a given collection.
 //
 // This means that iterating over the returned object will return
@@ -92,6 +93,18 @@ auto Enumerate(T&& iterable) -> Enumerated<T>;
 // };
 template <typename T>
 auto Iterate(T&& iterable) -> Iterated<T>;
+
+// Allows you to chain a collection of collection,
+// e.g. to collect all the elements of a vector of lists
+// Simply write this:
+//
+// vector<list<int>> collection
+// for (const int & value : Chain(collection))
+// {
+//      // do-something
+// }
+template <typename T>
+auto Chain(T&& iterable) -> Chained<T>;
 
 // Allows you to iterate over a collection of pointers using references
 //
@@ -374,6 +387,123 @@ class Iterated {
 template <typename T>
 auto Iterate(T&& iterable) -> Iterated<T> {
   return Iterated<T>{std::forward<T>(iterable)};
+}
+
+template <class T>
+class Chained {
+ public:
+  template <class, class>
+  class _Iterator;
+  using _outer_collection = details::remove_cvref_t<T>;
+  using _outer_const_iterator = typename _outer_collection::const_iterator;
+  using _outer_iterator = typename _outer_collection::iterator;
+  using _inner_collection = details::remove_cvref_t<typename _outer_collection::value_type>;
+  using _inner_const_iterator = typename _inner_collection::const_iterator;
+  using _inner_iterator = typename _inner_collection::iterator;
+
+  using iterator = _Iterator<_outer_iterator, _inner_iterator>;
+  using const_iterator = _Iterator<_outer_const_iterator, _inner_const_iterator>;
+  using value_type = typename _inner_collection::value_type;
+
+  Chained(T&& data) : data_(std::forward<T>(data)) {
+  }
+
+  auto begin() {
+    return MakeIterator(std::begin(data_));
+  }
+
+  auto end() {
+    return MakeIterator(std::end(data_));
+  }
+
+  auto begin() const {
+    return MakeIterator(std::begin(data_));
+  }
+
+  auto end() const {
+    return MakeIterator(std::end(data_));
+  }
+
+  template <class __outer_iterator, class __inner_iterator>
+  class _Iterator {
+   public:
+    _Iterator(__outer_iterator begin, __outer_iterator end)
+        : outer_begin_(begin), outer_end_(end), inner_begin_(), inner_end_() {
+      InitializeInnerCollection();
+      SkipEmptyInnerCollections();
+    }
+    auto& operator*() {
+      return *inner_begin_;
+    }
+
+    auto& operator*() const {
+      return *inner_begin_;
+    }
+
+    void operator++() {
+      ++inner_begin_;
+      SkipEmptyInnerCollections();
+    }
+
+    bool operator==(const _Iterator& other) const {
+      return IsAtEnd() == other.IsAtEnd();
+    }
+
+    bool operator!=(const _Iterator& other) const {
+      return !(*this == other);
+    }
+
+   private:
+    bool IsAtEnd() const {
+      return outer_begin_ == outer_end_;
+    }
+
+    bool IsAtEndOfInnerCollection() const {
+      return inner_begin_ == inner_end_;
+    }
+
+    // Initialized 'begin' and 'end' for the inner collection
+    void InitializeInnerCollection() {
+      if (!IsAtEnd()) {
+        inner_begin_ = std::begin(*outer_begin_);
+        inner_end_ = std::end(*outer_begin_);
+      }
+    }
+
+    // If we're at the end of the inner collection, advance to the next (non-empty) one
+    void SkipEmptyInnerCollections() {
+      while (!IsAtEnd() && IsAtEndOfInnerCollection()) {
+        AdvanceOuterCollection();
+      }
+    }
+
+    // Advance to the next inner collection
+    void AdvanceOuterCollection() {
+      ++outer_begin_;
+      InitializeInnerCollection();
+    }
+
+    __outer_iterator outer_begin_;
+    __outer_iterator outer_end_;
+    __inner_iterator inner_begin_;
+    __inner_iterator inner_end_;
+  };
+
+ private:
+  const_iterator MakeIterator(_outer_const_iterator begin_iterator) const {
+    return const_iterator(begin_iterator, std::cend(data_));
+  }
+
+  iterator MakeIterator(_outer_iterator begin_iterator) {
+    return iterator(begin_iterator, std::end(data_));
+  }
+
+  T data_;
+};
+
+template <typename T>
+auto Chain(T&& iterable) -> Chained<T> {
+  return Chained<T>{std::forward<T>(iterable)};
 }
 
 template <typename T>
