@@ -8,7 +8,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace iterator {
+namespace iterators {
 template <class>
 class Chained;
 template <class>
@@ -113,12 +113,12 @@ auto Chain(T&& iterable) -> Chained<T>;
 // Simply write this:
 //
 // vector<MyObject*> collection_of_pointers
-// for (const MyObject & object : ToReference(collection_of_pointers))
+// for (const MyObject & object : AsReferences(collection_of_pointers))
 // {
 //      // do-something
 // }
 template <typename T, typename std::enable_if_t<!details::is_unique_pointer_collection<T>::value, int> = 1>
-auto ToReference(T&& iterable) -> Referenced<T>;
+auto AsReferences(T&& iterable) -> Referenced<T>;
 
 // Allows you to iterate over a collection of unique_ptr's using references
 //
@@ -127,12 +127,12 @@ auto ToReference(T&& iterable) -> Referenced<T>;
 // Simply write this:
 //
 // vector<std::unique_ptr<MyObject>> collection_of_unique_pointers
-// for (const MyObject & object : ToReference(collection_of_unique_pointers))
+// for (const MyObject & object : AsReferences(collection_of_unique_pointers))
 // {
 //      // do-something
 // }
 template <typename T, typename std::enable_if_t<details::is_unique_pointer_collection<T>::value, int> = 1>
-auto ToReference(T&& iterable) -> ReferencedUnique<T>;
+auto AsReferences(T&& iterable) -> ReferencedUnique<T>;
 
 // Allows you to iterate back-to-front over a collection
 //
@@ -584,7 +584,7 @@ class Referenced {
 };
 
 template <typename T, typename std::enable_if_t<!details::is_unique_pointer_collection<T>::value, int>>
-auto ToReference(T&& iterable) -> Referenced<T> {
+auto AsReferences(T&& iterable) -> Referenced<T> {
   return Referenced<T>{std::forward<T>(iterable)};
 }
 
@@ -670,7 +670,7 @@ class ReferencedUnique {
 };
 
 template <typename T, typename std::enable_if_t<details::is_unique_pointer_collection<T>::value, int>>
-auto ToReference(T&& iterable) -> ReferencedUnique<T> {
+auto AsReferences(T&& iterable) -> ReferencedUnique<T> {
   return ReferencedUnique<T>{std::forward<T>(iterable)};
 }
 
@@ -988,6 +988,6 @@ auto Filter(_Iterable&& data, FilterFunction filter) -> Filtered<_Iterable, Filt
   return Filtered<_Iterable, FilterFunction>(std::forward<_Iterable>(data), std::forward<FilterFunction>(filter));
 }
 
-}  // namespace iterator
+}  // namespace iterators
 
 #endif  // _ITERATOR_UTILITIES_H_
