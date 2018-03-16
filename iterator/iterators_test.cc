@@ -13,6 +13,52 @@ using std::vector;
 using testing::ElementsAre;
 using testing::ElementsAreArray;
 
+// Prints a human-readable string of the given type, e.g. 'int const *'.
+// https://stackoverflow.com/a/20170989/3490116
+template <class T>
+std::string type_name() {
+  typedef typename std::remove_reference<T>::type TR;
+  std::unique_ptr<char, void (*)(void*)> own(
+#ifndef _MSC_VER
+      abi::__cxa_demangle(typeid(TR).name(), nullptr, nullptr, nullptr),
+#else
+      nullptr,
+#endif
+      std::free);
+  std::string r = own != nullptr ? own.get() : typeid(TR).name();
+  if (std::is_const<TR>::value)
+    r += " const";
+  if (std::is_volatile<TR>::value)
+    r += " volatile";
+  if (std::is_lvalue_reference<T>::value)
+    r += "&";
+  else if (std::is_rvalue_reference<T>::value)
+    r += "&&";
+  return r;
+}
+
+// Checks that the type returned by '_actual' matches the '_expected' type.
+// On failure, prints a human-readable message
+#define EXPECT_TYPE(_expected, _actual) EXPECT_EQ(type_name<_expected>(), type_name<_actual>())
+
+// Tests that the non_const iterator has the correct type, and returns values of the expected type
+#define TEST_NON_CONST_ITERATOR(_iterable, _expected_type)           \
+  using IterableClass = decltype(_iterable);                         \
+  /* Test begin/end return instances of _iterable::iterator */       \
+  EXPECT_TYPE(IterableClass::iterator, decltype(_iterable.begin())); \
+  EXPECT_TYPE(IterableClass::iterator, decltype(_iterable.end()));   \
+  /* Test iterator return value */                                   \
+  EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::iterator>().operator*()));
+
+// Tests that the const iterator has the correct type, and returns values of the expected type
+#define TEST_CONST_ITERATOR(_iterable, _expected_type)                                    \
+  using IterableClass = decltype(_iterable);                                              \
+  /* Test begin/end return instances of _iterable::const_iterator */                      \
+  EXPECT_TYPE(IterableClass::const_iterator, decltype(std::as_const(_iterable).begin())); \
+  EXPECT_TYPE(IterableClass::const_iterator, decltype(std::as_const(_iterable).end()));   \
+  /* Test const_iterator return value */                                                  \
+  EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::const_iterator>().operator*()));
+
 list<int> AnyCollection() {
   return list<int>{1, 3, 5};
 }
@@ -68,6 +114,51 @@ auto IncrementValues(_Enumerator* iterable) {
   return *iterable;
 }
 
+TEST(IsConstTest, SanityCheck) {
+  // Test that our 'details::is_const_type' utility works as expected
+#define IS_CONST(_type) details::is_const_type<_type>::value
+  EXPECT_TRUE(IS_CONST(const int&));
+  EXPECT_TRUE(IS_CONST(const int));
+  EXPECT_TRUE(IS_CONST(const int*));
+  EXPECT_TRUE(IS_CONST(int* const));
+  EXPECT_TRUE(IS_CONST(const int*&));
+  EXPECT_TRUE(IS_CONST(const int&&));
+  EXPECT_TRUE(IS_CONST(const int*&&));
+  EXPECT_TRUE(IS_CONST(int* const&));
+  EXPECT_FALSE(IS_CONST(int&));
+  EXPECT_FALSE(IS_CONST(int));
+  EXPECT_FALSE(IS_CONST(int*));
+  EXPECT_FALSE(IS_CONST(int*&));
+  EXPECT_FALSE(IS_CONST(int&&));
+  EXPECT_FALSE(IS_CONST(int*&&));
+}
+
+TEST(TypeNameTest, SanityCheck) {
+  // Test that our 'type_name' works as expected
+  EXPECT_EQ("int const&", type_name<const int&>());
+  EXPECT_EQ("int const", type_name<const int>());
+  EXPECT_EQ("int const *", type_name<const int*>());
+  EXPECT_EQ("int * const", type_name<int* const>());
+  EXPECT_EQ("int const *&", type_name<const int*&>());
+  EXPECT_EQ("int const&&", type_name<const int&&>());
+  EXPECT_EQ("int const *&&", type_name<const int*&&>());
+  EXPECT_EQ("int * const&", type_name<int* const&>());
+  EXPECT_EQ("int&", type_name<int&>());
+  EXPECT_EQ("int", type_name<int>());
+  EXPECT_EQ("int *", type_name<int*>());
+  EXPECT_EQ("int *&", type_name<int*&>());
+  EXPECT_EQ("int&&", type_name<int&&>());
+  EXPECT_EQ("int *&&", type_name<int*&&>());
+}
+
+TEST(NonConstCollection, SanityCheck) {
+  EXPECT_TYPE(vector<int>::iterator, details::non_const_iterator_t<vector<int>>);
+  EXPECT_TYPE(vector<int>::iterator, details::non_const_iterator_t<vector<int>&>);
+  EXPECT_TYPE(vector<int>::iterator, details::non_const_iterator_t<vector<int>&&>);
+  EXPECT_TYPE(vector<int>::const_iterator, details::non_const_iterator_t<const vector<int>>);
+  EXPECT_TYPE(vector<int>::const_iterator, details::non_const_iterator_t<const vector<int>&>);
+}
+
 TEST(EnumerateTest, can_enumerate_const_collection) {
   vector<char> collection{'A', 'B', 'C'};
   string expected{"0: A, 1: B, 2: C, "};
@@ -108,35 +199,50 @@ TEST(EnumerateTest, can_non_const_enumerate_rvalue_collection) {
   EXPECT_EQ(expected, FormatEnumerate(IncrementValues(&iterator)));
 }
 
-TEST(IterateTest, can_iterate_const_collection) {
-  list<int> collection{AnyCollection()};
-
-  auto result = Iterate(std::as_const(collection));
-  EXPECT_THAT(std::as_const(result), ElementsAreArray(collection));
-}
-
-TEST(IterateTest, can_const_iterate_non_const_collection) {
-  list<int> collection{AnyCollection()};
-
-  auto result = Iterate(collection);
-  EXPECT_THAT(std::as_const(result), ElementsAreArray(collection));
-}
-
-TEST(IterateTest, can_non_const_iterate_non_const_collection) {
-  list<int> collection{AnyCollection()};
-
+TEST(IterateTest, ReturnsCorrectValues) {
+  vector<int> collection{1, 3, 5};
   auto iterator = Iterate(collection);
-  EXPECT_THAT(IncreaseAll(&iterator), ElementsAreArray(IncreaseAll(&collection)));
+
+  EXPECT_THAT(iterator, ElementsAre(1, 3, 5));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre(1, 3, 5));
 }
 
-TEST(IterateTest, can_const_iterate_rvalue_collection) {
-  auto result = Iterate(AnyCollection());
-  EXPECT_THAT(std::as_const(result), ElementsAreArray(AnyCollection()));
+TEST(IterateTest, CanModifyValues) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Iterate(collection);
+
+  int& first = *iterator.begin();
+  first = 123;
+
+  EXPECT_THAT(iterator, ElementsAre(123, 3, 5));
 }
 
-TEST(IterateTest, can_non_const_iterate_rvalue_collection) {
-  auto result = Iterate(AnyCollection());
-  EXPECT_THAT(IncreaseAll(&result), ElementsAreArray(IncreaseAll(&AnyCollection())));
+TEST(IterateTest, IterateOverNonConstCollection) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Iterate(collection);
+
+  TEST_NON_CONST_ITERATOR(iterator, int&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(IterateTest, IterateOverConstCollection) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  vector<int> collection{1, 3, 5};
+  auto iterator = Iterate(std::as_const(collection));
+
+  TEST_NON_CONST_ITERATOR(iterator, int const&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(IterateTest, IterateRvalueCollection) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Iterate(std::move(collection));
+
+  TEST_NON_CONST_ITERATOR(iterator, int&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
 TEST(ReverseTest, can_iterate_const_collection) {

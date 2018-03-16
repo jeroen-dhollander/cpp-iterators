@@ -29,12 +29,11 @@ template <class, typename>
 class Filtered;
 
 namespace details {
-template <class T>
-struct is_unique_pointer_helper : std::false_type {};
-template <class T>
-struct is_unique_pointer_helper<std::unique_ptr<T>> : std::true_type {};
-template <class T>
-struct is_unique_pointer : is_unique_pointer_helper<typename std::remove_cv_t<T>> {};
+// clang-format off
+template <class T> struct is_unique_pointer_helper : std::false_type {};
+template <class T> struct is_unique_pointer_helper<std::unique_ptr<T>> : std::true_type {};
+template <class T> struct is_unique_pointer : is_unique_pointer_helper<typename std::remove_cv_t<T>> {};
+// clang-format on
 
 template <class T>
 struct remove_cvref {
@@ -43,8 +42,38 @@ struct remove_cvref {
 template <class T>
 using remove_cvref_t = typename remove_cvref<T>::type;
 
+// Returns true if T is a collection over unique_ptr, e.g. vector<std::unique_ptr<int>>
 template <class T>
 struct is_unique_pointer_collection : is_unique_pointer<typename remove_cvref_t<T>::value_type> {};
+
+// clang-format off
+// Note: 'std::is_const' is pretty strict, e.g. 'std::is_const<const int&>' returns 'false'.
+//       So we're using this construct that checks if it is const in any way
+template<class T> struct is_const_type : std::false_type {};
+template<class T> struct is_const_type<const T> : std::true_type {};
+template<class T> struct is_const_type<const T&> : std::true_type {};
+template<class T> struct is_const_type<const T*> : std::true_type {};
+template<class T> struct is_const_type<T*const> : std::true_type {};
+template<class T> struct is_const_type<const T*&> : std::true_type {};
+template<class T> struct is_const_type<const T&&> : std::true_type {};
+template<class T> struct is_const_type<const T*&&> : std::true_type {};
+// clang-format on
+
+template <class T, bool>
+struct non_const_iterator_helper {
+  typedef typename remove_cvref_t<T>::iterator type;
+};
+template <class T>
+struct non_const_iterator_helper<T, true> {
+  typedef typename remove_cvref_t<T>::const_iterator type;
+};
+
+// Returns T::iterator if the iterator is non_const,
+// returns T::const_iterator if it is const.
+// e.g. non_const_iterator_t<vector<int>> --> vector<int>::iterator
+// e.g. non_const_iterator_t<const vector<int>> --> vector<int>::const_iterator
+template <class T>
+using non_const_iterator_t = typename non_const_iterator_helper<T, is_const_type<T>::value>::type;
 
 }  // namespace details
 
@@ -359,25 +388,25 @@ class Iterated {
 
   using value_type = typename _iterable::value_type;
   using const_iterator = typename _iterable::const_iterator;
-  using iterator = typename _iterable::iterator;
+  using iterator = details::non_const_iterator_t<T>;
 
   explicit Iterated(T&& iterable) : iterable_(std::forward<T>(iterable)) {
   }
 
-  auto begin() {
+  iterator begin() {
     return std::begin(iterable_);
   }
 
-  auto end() {
+  iterator end() {
     return std::end(iterable_);
   }
 
-  auto begin() const {
-    return std::begin(iterable_);
+  const_iterator begin() const {
+    return std::cbegin(iterable_);
   }
 
-  auto end() const {
-    return std::end(iterable_);
+  const_iterator end() const {
+    return std::cend(iterable_);
   }
 
  private:
