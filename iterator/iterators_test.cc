@@ -42,22 +42,26 @@ std::string type_name() {
 #define EXPECT_TYPE(_expected, _actual) EXPECT_EQ(type_name<_expected>(), type_name<_actual>())
 
 // Tests that the non_const iterator has the correct type, and returns values of the expected type
-#define TEST_NON_CONST_ITERATOR(_iterable, _expected_type)           \
-  using IterableClass = decltype(_iterable);                         \
-  /* Test begin/end return instances of _iterable::iterator */       \
-  EXPECT_TYPE(IterableClass::iterator, decltype(_iterable.begin())); \
-  EXPECT_TYPE(IterableClass::iterator, decltype(_iterable.end()));   \
-  /* Test iterator return value */                                   \
-  EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::iterator>().operator*()));
+#define TEST_NON_CONST_ITERATOR(_iterable, _expected_type)                                      \
+  {                                                                                             \
+    using IterableClass = decltype(_iterable);                                                  \
+    /* Test begin/end return instances of _iterable::iterator */                                \
+    EXPECT_TYPE(IterableClass::iterator, decltype(_iterable.begin()));                          \
+    EXPECT_TYPE(IterableClass::iterator, decltype(_iterable.end()));                            \
+    /* Test iterator return value */                                                            \
+    EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::iterator>().operator*())); \
+  }
 
 // Tests that the const iterator has the correct type, and returns values of the expected type
-#define TEST_CONST_ITERATOR(_iterable, _expected_type)                                    \
-  using IterableClass = decltype(_iterable);                                              \
-  /* Test begin/end return instances of _iterable::const_iterator */                      \
-  EXPECT_TYPE(IterableClass::const_iterator, decltype(std::as_const(_iterable).begin())); \
-  EXPECT_TYPE(IterableClass::const_iterator, decltype(std::as_const(_iterable).end()));   \
-  /* Test const_iterator return value */                                                  \
-  EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::const_iterator>().operator*()));
+#define TEST_CONST_ITERATOR(_iterable, _expected_type)                                                \
+  {                                                                                                   \
+    using IterableClass = decltype(_iterable);                                                        \
+    /* Test begin/end return instances of _iterable::const_iterator */                                \
+    EXPECT_TYPE(IterableClass::const_iterator, decltype(std::as_const(_iterable).begin()));           \
+    EXPECT_TYPE(IterableClass::const_iterator, decltype(std::as_const(_iterable).end()));             \
+    /* Test const_iterator return value */                                                            \
+    EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::const_iterator>().operator*())); \
+  }
 
 list<int> AnyCollection() {
   return list<int>{1, 3, 5};
@@ -296,41 +300,79 @@ TEST(ReverseTest, ReverseRvalueCollection) {
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
-TEST(JoinTest, can_iterate_2_const_collections) {
+TEST(JoinTest, ReturnsCorrectValues) {
   list<int> first{1, 2, 3};
   vector<int> second{4, 5, 6};
+  auto iterator = Join(first, second);
 
-  const auto& const_first = first;
-  const auto& const_second = second;
-
-  auto const_iterator = Join(const_first, const_second);
-  EXPECT_THAT(std::as_const(const_iterator), ElementsAre(1, 2, 3, 4, 5, 6));
+  EXPECT_THAT(iterator, ElementsAre(1, 2, 3, 4, 5, 6));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre(1, 2, 3, 4, 5, 6));
 }
 
-TEST(JoinTest, can_const_iterate_2_non_const_collection) {
-  list<int> first{1, 2, 3};
-  vector<int> second{4, 5, 6};
+TEST(JoinTest, WorksForEmptyCollections) {
+  list<int> empty{};
+  vector<int> other{1};
 
-  auto result = Join(first, second);
-  EXPECT_THAT(std::as_const(result), ElementsAre(1, 2, 3, 4, 5, 6));
+  EXPECT_THAT(Join(empty, other), ElementsAre(1));
+  EXPECT_THAT(Join(other, empty), ElementsAre(1));
+  EXPECT_THAT(Join(empty, empty), ElementsAre());
 }
 
-TEST(JoinTest, can_non_const_iterate_2_non_const_collection) {
-  list<int> first{1, 2, 3};
-  vector<int> second{4, 5, 6};
+TEST(JoinTest, CanModifyValues_InBothCollections) {
+  list<int> first{1};
+  vector<int> second{2};
 
-  auto result = Join(first, second);
-  EXPECT_THAT(IncreaseAll(&result), ElementsAre(2, 3, 4, 5, 6, 7));
+  auto iterator = Join(first, second);
+
+  for (auto& value : iterator)
+    value += 100;
+
+  EXPECT_THAT(iterator, ElementsAre(101, 102));
 }
 
-TEST(JoinTest, can_const_iterate_2_rvalue_collection) {
-  auto result = Join(list<int>{1, 2, 3}, vector<int>{4, 5, 6});
-  EXPECT_THAT(std::as_const(result), ElementsAre(1, 2, 3, 4, 5, 6));
+TEST(JoinTest, JoinOverNonConstCollections) {
+  list<int> first{};
+  vector<int> second{};
+  auto iterator = Join(first, second);
+
+  TEST_NON_CONST_ITERATOR(iterator, int&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
-TEST(JoinTest, can_non_const_iterate_2_rvalue_collection) {
-  auto result = Join(list<int>{1, 2, 3}, vector<int>{4, 5, 6});
-  EXPECT_THAT(IncreaseAll(&result), ElementsAre(2, 3, 4, 5, 6, 7));
+TEST(JoinTest, JoinOverConstCollections) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  list<int> first{};
+  vector<int> second{};
+  auto iterator = Join(std::as_const(first), std::as_const(second));
+
+  TEST_NON_CONST_ITERATOR(iterator, int const&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(JoinTest, JoinOverConstAndNonConstCollections) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  list<int> first{};
+  vector<int> second{};
+
+  auto iterator_1 = Join(std::as_const(first), second);
+  TEST_NON_CONST_ITERATOR(iterator_1, int const&);
+  TEST_CONST_ITERATOR(iterator_1, int const&);
+
+  auto iterator_2 = Join(first, std::as_const(second));
+  TEST_NON_CONST_ITERATOR(iterator_2, int const&);
+  TEST_CONST_ITERATOR(iterator_2, int const&);
+}
+
+TEST(JoinTest, JoinRvalueCollections) {
+  list<int> first{};
+  vector<int> second{};
+  auto iterator = Join(std::move(first), std::move(second));
+
+  TEST_NON_CONST_ITERATOR(iterator, int&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
 TEST(MapTest, can_const_map_const_collection) {

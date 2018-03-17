@@ -207,14 +207,19 @@ template<class T> struct is_const_type<const T&&> : std::true_type {};
 template<class T> struct is_const_type<const T*&&> : std::true_type {};
 // clang-format on
 
+template <typename T>
+constexpr bool is_const_type_v = is_const_type<T>::value;
+
+template <typename T1, typename T2>
+constexpr bool is_any_const_v = std::disjunction_v<is_const_type<T1>, is_const_type<T2>>;
+
 // Returns T::iterator if T is non_const,
 // returns T::const_iterator if it is const.
 // e.g. non_const_iterator_t<vector<int>> --> vector<int>::iterator
 // e.g. non_const_iterator_t<const vector<int>> --> vector<int>::const_iterator
 template <typename T>
-using non_const_iterator_t =
-    typename std::conditional_t<is_const_type<T>::value, typename remove_cvref_t<T>::const_iterator,
-                                typename remove_cvref_t<T>::iterator>;
+using non_const_iterator_t = typename std::conditional_t<is_const_type_v<T>, typename remove_cvref_t<T>::const_iterator,
+                                                         typename remove_cvref_t<T>::iterator>;
 
 // Returns T::reverse_iterator if T is non_const,
 // returns T::const_reverse_iterator if it is const.
@@ -222,8 +227,9 @@ using non_const_iterator_t =
 // e.g. non_const_reverse_iterator_t<const vector<int>> --> vector<int>::const_reverse_iterator
 template <typename T>
 using non_const_reverse_iterator_t =
-    typename std::conditional_t<is_const_type<T>::value, typename remove_cvref_t<T>::const_reverse_iterator,
+    typename std::conditional_t<is_const_type_v<T>, typename remove_cvref_t<T>::const_reverse_iterator,
                                 typename remove_cvref_t<T>::reverse_iterator>;
+
 }  // namespace details
 
 // Returned value when iterating Enumerate
@@ -261,7 +267,7 @@ class Enumerated {
   using _non_const_iterator = _Iterator<_collection_iterator, _Item>;
 
   using const_iterator = _Iterator<_collection_const_iterator, const _Item>;
-  using iterator = typename std::conditional_t<details::is_const_type<T>::value, const_iterator, _non_const_iterator>;
+  using iterator = typename std::conditional_t<details::is_const_type_v<T>, const_iterator, _non_const_iterator>;
   using value_type = _Item;
 
   explicit Enumerated(T&& iterable) : iterable_(std::forward<T>(iterable)) {
@@ -702,8 +708,6 @@ auto Reverse(T&& iterable) -> Reversed<T> {
 template <class T1, class T2>
 class Joined {
  public:
-  template <class, class>
-  class _Iterator;
   using _iterable_1 = typename std::remove_reference_t<T1>;
   using _const_iterator_1 = typename _iterable_1::const_iterator;
   using _iterator_1 = typename _iterable_1::iterator;
@@ -712,30 +716,34 @@ class Joined {
   using _const_iterator_2 = typename _iterable_2::const_iterator;
   using _iterator_2 = typename _iterable_2::iterator;
 
-  using iterator = _Iterator<typename _iterable_1::iterator, typename _iterable_2::iterator>;
-  using const_iterator = _Iterator<typename _iterable_1::const_iterator, typename _iterable_2::const_iterator>;
-  using value_type = typename _iterable_1::value_type;
-
   static_assert((std::is_same<typename _iterable_1::value_type, typename _iterable_2::value_type>::value),
                 "value_type must be same type for both collections");
+
+  template <class, class>
+  class _Iterator;
+  using _non_const_iterator = _Iterator<typename _iterable_1::iterator, typename _iterable_2::iterator>;
+
+  using const_iterator = _Iterator<typename _iterable_1::const_iterator, typename _iterable_2::const_iterator>;
+  using iterator = typename std::conditional_t<details::is_any_const_v<T1, T2>, const_iterator, _non_const_iterator>;
+  using value_type = typename _iterable_1::value_type;
 
   Joined(T1&& data_1, T2&& data_2) : first_(std::forward<T1>(data_1)), second_(std::forward<T2>(data_2)) {
   }
 
-  auto begin() {
+  iterator begin() {
     return MakeIterator(std::begin(first_), std::begin(second_));
   }
 
-  auto end() {
+  iterator end() {
     return MakeIterator(std::end(first_), std::end(second_));
   }
 
-  auto begin() const {
-    return MakeIterator(std::begin(first_), std::begin(second_));
+  const_iterator begin() const {
+    return MakeConstIterator(std::cbegin(first_), std::cbegin(second_));
   }
 
-  auto end() const {
-    return MakeIterator(std::end(first_), std::end(second_));
+  const_iterator end() const {
+    return MakeConstIterator(std::cend(first_), std::cend(second_));
   }
 
   template <class _FirstIterator, class _SecondIterator>
@@ -745,12 +753,6 @@ class Joined {
         : first_(first), first_end_(first_end), second_(second), second_end_(second_end) {
     }
     auto& operator*() {
-      if (first_ != first_end_)
-        return *first_;
-      return *second_;
-    }
-
-    auto& operator*() const {
       if (first_ != first_end_)
         return *first_;
       return *second_;
@@ -778,7 +780,7 @@ class Joined {
   };
 
  private:
-  const_iterator MakeIterator(_const_iterator_1 first_begin, _const_iterator_2 second_begin) const {
+  const_iterator MakeConstIterator(_const_iterator_1 first_begin, _const_iterator_2 second_begin) const {
     return const_iterator(first_begin, std::cend(first_), second_begin, std::cend(second_));
   }
 
