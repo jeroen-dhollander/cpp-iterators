@@ -101,17 +101,8 @@ template <typename _Enumerator>
 string FormatEnumerate(const _Enumerator& iterable) {
   string result{};
   for (const auto& item : iterable)
-    result += std::to_string(item.position) + ": " + item.value + ", ";
+    result += std::to_string(item.Position()) + ": " + item.Value() + ", ";
   return result;
-}
-
-// Executes '++' on the values of the enumerator.
-// Used to ensure we can non-const access the elements
-template <typename _Enumerator>
-auto IncrementValues(_Enumerator* iterable) {
-  for (auto& item : *iterable)
-    item.value++;
-  return *iterable;
 }
 
 TEST(IsConstTest, SanityCheck) {
@@ -151,7 +142,7 @@ TEST(TypeNameTest, SanityCheck) {
   EXPECT_EQ("int *&&", type_name<int*&&>());
 }
 
-TEST(NonConstCollection, SanityCheck) {
+TEST(NonConstIterator, SanityCheck) {
   EXPECT_TYPE(vector<int>::iterator, details::non_const_iterator_t<vector<int>>);
   EXPECT_TYPE(vector<int>::iterator, details::non_const_iterator_t<vector<int>&>);
   EXPECT_TYPE(vector<int>::iterator, details::non_const_iterator_t<vector<int>&&>);
@@ -159,44 +150,58 @@ TEST(NonConstCollection, SanityCheck) {
   EXPECT_TYPE(vector<int>::const_iterator, details::non_const_iterator_t<const vector<int>&>);
 }
 
-TEST(EnumerateTest, can_enumerate_const_collection) {
-  vector<char> collection{'A', 'B', 'C'};
-  string expected{"0: A, 1: B, 2: C, "};
-
-  const auto& const_collection = collection;
-
-  auto const_iterator = Enumerate(const_collection);
-  EXPECT_EQ(expected, FormatEnumerate(const_iterator));
+TEST(NonConstReverseIterator, SanityCheck) {
+  EXPECT_TYPE(vector<int>::reverse_iterator, details::non_const_reverse_iterator_t<vector<int>>);
+  EXPECT_TYPE(vector<int>::reverse_iterator, details::non_const_reverse_iterator_t<vector<int>&>);
+  EXPECT_TYPE(vector<int>::reverse_iterator, details::non_const_reverse_iterator_t<vector<int>&&>);
+  EXPECT_TYPE(vector<int>::const_reverse_iterator, details::non_const_reverse_iterator_t<const vector<int>>);
+  EXPECT_TYPE(vector<int>::const_reverse_iterator, details::non_const_reverse_iterator_t<const vector<int>&>);
 }
 
-TEST(EnumerateTest, can_const_enumerate_non_const_collection) {
+TEST(EnumerateTest, ReturnsCorrectValues) {
   vector<char> collection{'A', 'B', 'C'};
-  string expected{"0: A, 1: B, 2: C, "};
-
   auto iterator = Enumerate(collection);
-  EXPECT_EQ(expected, FormatEnumerate(iterator));
+
+  EXPECT_EQ("0: A, 1: B, 2: C, ", FormatEnumerate(iterator));
+  EXPECT_EQ("0: A, 1: B, 2: C, ", FormatEnumerate(std::as_const(iterator)));
 }
 
-TEST(EnumerateTest, can_non_const_enumerate_non_const_collection) {
+TEST(EnumerateTest, CanModifyValues) {
   vector<char> collection{'A', 'B', 'C'};
-  string expected{"0: B, 1: C, 2: D, "};
-
   auto iterator = Enumerate(collection);
-  EXPECT_EQ(expected, FormatEnumerate(IncrementValues(&iterator)));
+
+  auto& first = *iterator.begin();
+  first.Value() = 'Z';
+
+  EXPECT_THAT(collection, ElementsAre('Z', 'B', 'C'));
 }
 
-TEST(EnumerateTest, can_const_enumerate_rvalue_collection) {
-  auto iterator = Enumerate(vector<char>{'A', 'B', 'C'});
-  string expected{"0: A, 1: B, 2: C, "};
+TEST(EnumerateTest, EnumerateOverNonConstCollection) {
+  vector<char> collection{'A', 'B', 'C'};
+  auto iterator = Enumerate(collection);
 
-  EXPECT_EQ(expected, FormatEnumerate(iterator));
+  TEST_NON_CONST_ITERATOR(iterator, Item<char>&);
+  TEST_CONST_ITERATOR(iterator, Item<char> const&);
+  EXPECT_TYPE(Item<char>, decltype(iterator)::value_type);
 }
 
-TEST(EnumerateTest, can_non_const_enumerate_rvalue_collection) {
-  auto iterator = Enumerate(vector<char>{'A', 'B', 'C'});
-  string expected{"0: B, 1: C, 2: D, "};
+TEST(EnumerateTest, EnumerateOverConstCollection) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  vector<char> collection{'A', 'B', 'C'};
+  auto iterator = Enumerate(std::as_const(collection));
 
-  EXPECT_EQ(expected, FormatEnumerate(IncrementValues(&iterator)));
+  TEST_NON_CONST_ITERATOR(iterator, Item<char> const&);
+  TEST_CONST_ITERATOR(iterator, Item<char> const&);
+  EXPECT_TYPE(Item<char>, decltype(iterator)::value_type);
+}
+
+TEST(EnumerateTest, EnumerateRvalueCollection) {
+  vector<char> collection{'A', 'B', 'C'};
+  auto iterator = Enumerate(std::move(collection));
+
+  TEST_NON_CONST_ITERATOR(iterator, Item<char>&);
+  TEST_CONST_ITERATOR(iterator, Item<char> const&);
+  EXPECT_TYPE(Item<char>, decltype(iterator)::value_type);
 }
 
 TEST(IterateTest, ReturnsCorrectValues) {

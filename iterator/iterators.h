@@ -45,66 +45,20 @@ using remove_cvref_t = typename remove_cvref<T>::type;
 // Returns true if T is a collection over unique_ptr, e.g. vector<std::unique_ptr<int>>
 template <class T>
 struct is_unique_pointer_collection : is_unique_pointer<typename remove_cvref_t<T>::value_type> {};
-
-// clang-format off
-// Note: 'std::is_const' is pretty strict, e.g. 'std::is_const<const int&>' returns 'false'.
-//       So we're using this construct that checks if it is const in any way
-template<class T> struct is_const_type : std::false_type {};
-template<class T> struct is_const_type<const T> : std::true_type {};
-template<class T> struct is_const_type<const T&> : std::true_type {};
-template<class T> struct is_const_type<const T*> : std::true_type {};
-template<class T> struct is_const_type<T*const> : std::true_type {};
-template<class T> struct is_const_type<const T*&> : std::true_type {};
-template<class T> struct is_const_type<const T&&> : std::true_type {};
-template<class T> struct is_const_type<const T*&&> : std::true_type {};
-// clang-format on
-
-template <class T, bool>
-struct non_const_iterator_helper {
-  typedef typename remove_cvref_t<T>::iterator type;
-};
-template <class T>
-struct non_const_iterator_helper<T, true> {
-  typedef typename remove_cvref_t<T>::const_iterator type;
-};
-
-// Returns T::iterator if T is non_const,
-// returns T::const_iterator if it is const.
-// e.g. non_const_iterator_t<vector<int>> --> vector<int>::iterator
-// e.g. non_const_iterator_t<const vector<int>> --> vector<int>::const_iterator
-template <class T>
-using non_const_iterator_t = typename non_const_iterator_helper<T, is_const_type<T>::value>::type;
-
-template <class T, bool>
-struct non_const_reverse_iterator_helper {
-  typedef typename remove_cvref_t<T>::reverse_iterator type;
-};
-template <class T>
-struct non_const_reverse_iterator_helper<T, true> {
-  typedef typename remove_cvref_t<T>::const_reverse_iterator type;
-};
-
-// Returns T::reverse_iterator if T is non_const,
-// returns T::const_reverse_iterator if it is const.
-// e.g. non_const_reverse_iterator_t<vector<int>> --> vector<int>::reverse_iterator
-// e.g. non_const_reverse_iterator_t<const vector<int>> --> vector<int>::const_reverse_iterator
-template <class T>
-using non_const_reverse_iterator_t = typename non_const_reverse_iterator_helper<T, is_const_type<T>::value>::type;
-
 }  // namespace details
 
 // Allows you to enumerate over the elements of a given collection.
 //
 // This means that iterating over the returned object will return
-// iterator objects with 2 fields:
-//    - the position of the element in the collection
-//    - a reference to the value of the element
+// iterator objects with 2 methods:
+//    - Postion(): the position of the element in the collection
+//    - Value(): a reference to the value of the element
 //
 // For example, this:
 //
 // vector<char> values {{'A', 'B', 'C'}};
 // for (const auto & item: Enumerate(values))
-//     printf("%u: %c\n", item.position, item.value);
+//     printf("%u: %c\n", item.Position(), item.Value());
 //
 // will print
 //     0: A
@@ -239,76 +193,105 @@ auto Filter(_Iterable&& data, FilterFunction filter) -> Filtered<_Iterable, Filt
 // Implementation
 //-----------------------------------------------------------------------------
 
+namespace details {
+// clang-format off
+// Note: 'std::is_const' is pretty strict, e.g. 'std::is_const<const int&>' returns 'false'.
+//       So we're using this construct that checks if it is const in any way
+template<class T> struct is_const_type : std::false_type {};
+template<class T> struct is_const_type<const T> : std::true_type {};
+template<class T> struct is_const_type<const T&> : std::true_type {};
+template<class T> struct is_const_type<const T*> : std::true_type {};
+template<class T> struct is_const_type<T*const> : std::true_type {};
+template<class T> struct is_const_type<const T*&> : std::true_type {};
+template<class T> struct is_const_type<const T&&> : std::true_type {};
+template<class T> struct is_const_type<const T*&&> : std::true_type {};
+// clang-format on
+
+// Returns T::iterator if T is non_const,
+// returns T::const_iterator if it is const.
+// e.g. non_const_iterator_t<vector<int>> --> vector<int>::iterator
+// e.g. non_const_iterator_t<const vector<int>> --> vector<int>::const_iterator
+template <typename T>
+using non_const_iterator_t =
+    typename std::conditional_t<is_const_type<T>::value, typename remove_cvref_t<T>::const_iterator,
+                                typename remove_cvref_t<T>::iterator>;
+
+// Returns T::reverse_iterator if T is non_const,
+// returns T::const_reverse_iterator if it is const.
+// e.g. non_const_reverse_iterator_t<vector<int>> --> vector<int>::reverse_iterator
+// e.g. non_const_reverse_iterator_t<const vector<int>> --> vector<int>::const_reverse_iterator
+template <typename T>
+using non_const_reverse_iterator_t =
+    typename std::conditional_t<is_const_type<T>::value, typename remove_cvref_t<T>::const_reverse_iterator,
+                                typename remove_cvref_t<T>::reverse_iterator>;
+}  // namespace details
+
+// Returned value when iterating Enumerate
+template <typename T>
+class Item {
+ public:
+  Item(int position, T* value) : position_(position), value_(value) {
+  }
+
+  int Position() const {
+    return position_;
+  }
+  const T& Value() const {
+    return *value_;
+  }
+  T& Value() {
+    return *value_;
+  }
+
+ private:
+  int position_;
+  T* value_;
+};
+
 template <typename T>
 class Enumerated {
  public:
-  struct Item;
+  template <typename, typename>
+  class _Iterator;
   using _collection_type = typename std::remove_reference<T>::type;
   using _collection_value_type = typename _collection_type::value_type;
   using _collection_const_iterator = typename _collection_type::const_iterator;
   using _collection_iterator = typename _collection_type::iterator;
+  using _Item = Item<_collection_value_type>;
+  using _non_const_iterator = _Iterator<_collection_iterator, _Item>;
 
-  class iterator;
-  class const_iterator;
-  using value_type = Item;
-
-  // Return value when iterating a non-const version
-  struct Item {
-    int position;
-    _collection_value_type& value;
-  };
-  // Return value when iterating a const version
-  struct ConstItem {
-    int position;
-    const _collection_value_type& value;
-  };
-  // Used so we can update the stored item
-  struct PointerItem {
-    int position;
-    const _collection_value_type* value;
-  };
-  // Internal representation of an item
-  union UnionItem {
-    UnionItem() : pointer_item() {
-    }
-
-    ConstItem const_item;
-    Item item;
-    PointerItem pointer_item;
-  };
+  using const_iterator = _Iterator<_collection_const_iterator, const _Item>;
+  using iterator = typename std::conditional_t<details::is_const_type<T>::value, const_iterator, _non_const_iterator>;
+  using value_type = _Item;
 
   explicit Enumerated(T&& iterable) : iterable_(std::forward<T>(iterable)) {
   }
 
-  auto begin() const {
+  const_iterator begin() const {
+    return MakeConstIterator(std::cbegin(iterable_));
+  }
+
+  const_iterator end() const {
+    return MakeConstIterator(std::cend(iterable_));
+  }
+
+  iterator begin() {
     return MakeIterator(std::begin(iterable_));
   }
 
-  auto end() const {
+  iterator end() {
     return MakeIterator(std::end(iterable_));
   }
 
-  auto begin() {
-    return MakeIterator(std::begin(iterable_));
-  }
-
-  auto end() {
-    return MakeIterator(std::end(iterable_));
-  }
-
-  class iterator {
+  template <typename __iterator, typename __return_type>
+  class _Iterator {
    public:
-    iterator(_collection_iterator begin, _collection_iterator end, int position)
-        : begin_(begin), end_(end), position_(position), item_{} {
+    _Iterator(__iterator begin, __iterator end, int position) : begin_(begin), end_(end), position_(position), item_{} {
       SetItem();
     }
 
-    Item& operator*() {
-      return item_.item;
-    }
-
-    const Item& operator*() const {
-      return item_.item;
+    __return_type& operator*() {
+      return item_;
     }
 
     void operator++() {
@@ -317,76 +300,36 @@ class Enumerated {
       SetItem();
     }
 
-    bool operator==(const iterator& other) const {
+    bool operator==(const _Iterator& other) const {
       return begin_ == other.begin_;
     }
-    bool operator!=(const iterator& other) const {
+    bool operator!=(const _Iterator& other) const {
       return !(*this == other);
     }
 
    private:
     void SetItem() {
       if (begin_ != end_)
-        item_.pointer_item = PointerItem{position_, &*begin_};
+        item_ = _Item{position_, &NonConstValue()};
     }
 
-    _collection_iterator begin_;
-    _collection_iterator end_;
+    _collection_value_type& NonConstValue() {
+      return const_cast<_collection_value_type&>(*begin_);
+    }
+
+    __iterator begin_;
+    __iterator end_;
     int position_;
-    UnionItem item_;
-  };
-
-  class const_iterator {
-   public:
-    const_iterator(_collection_const_iterator begin, _collection_const_iterator end, int position)
-        : begin_(begin), end_(end), position_(position), item_{} {
-      SetItem();
-    }
-
-    ConstItem& operator*() {
-      return item_.const_item;
-    }
-
-    const ConstItem& operator*() const {
-      return item_.item;
-    }
-
-    void operator++() {
-      ++begin_;
-      ++position_;
-      SetItem();
-    }
-
-    bool operator==(const const_iterator& other) const {
-      return begin_ == other.begin_;
-    }
-    bool operator!=(const const_iterator& other) const {
-      return !(*this == other);
-    }
-
-   private:
-    void SetItem() {
-      if (begin_ != end_)
-        item_.pointer_item = PointerItem{position_, &*begin_};
-    }
-
-    _collection_const_iterator begin_;
-    _collection_const_iterator end_;
-    int position_;
-    UnionItem item_;
+    _Item item_;
   };
 
  private:
-  const_iterator MakeIterator(_collection_const_iterator begin) const {
-    return const_iterator(begin, std::end(iterable_), 0);
+  const_iterator MakeConstIterator(_collection_const_iterator begin_iterator) const {
+    return const_iterator(begin_iterator, std::cend(iterable_), 0);
   }
 
-  const_iterator MakeIterator(_collection_const_iterator begin) {
-    return const_iterator(begin, std::end(iterable_), 0);
-  }
-
-  iterator MakeIterator(_collection_iterator begin) {
-    return iterator(begin, std::end(iterable_), 0);
+  iterator MakeIterator(_collection_iterator begin_iterator) {
+    return iterator(begin_iterator, std::end(iterable_), 0);
   }
 
   T iterable_;
