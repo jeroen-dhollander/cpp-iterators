@@ -375,39 +375,61 @@ TEST(JoinTest, JoinRvalueCollections) {
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
-TEST(MapTest, can_const_map_const_collection) {
-  std::list<int> input{1, 3, 5};
-
-  auto map = Map(std::as_const(input), [](const auto& value) { return std::to_string(value); });
-  EXPECT_THAT(std::as_const(map), ElementsAre("1", "3", "5"));
+std::string ToString(const int& value) {
+  return std::to_string(value);
 }
 
-TEST(MapTest, can_const_map_non_const_collection) {
-  std::list<int> input{1, 3, 5};
+TEST(MapTest, ReturnsCorrectValues) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Map(collection, ToString);
 
-  auto map = Map(input, [](const auto& value) { return std::to_string(value); });
-  EXPECT_THAT(std::as_const(map), ElementsAre("1", "3", "5"));
+  EXPECT_THAT(iterator, ElementsAre("1", "3", "5"));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre("1", "3", "5"));
 }
 
-TEST(MapTest, can_non_const_map_non_const_collection) {
-  std::list<int> input{1, 3, 5};
+TEST(MapTest, CanModifyValues) {
+  // Note: For map, the non-const version means we send a non-const value into the mapping function
+  vector<int> collection{1, 3, 5};
+  auto iterator = Map(collection, [](int& value) -> int {
+    value += 100;
+    return 0;
+  });
 
-  auto map = Map(input, [](const auto& value) { return std::to_string(value); });
-  EXPECT_THAT(AppendAll(&map, "-suffix"), ElementsAre("1-suffix", "3-suffix", "5-suffix"));
+  for (const int& value : iterator) {
+    // simply iterating so the value is updated in the mapping function
+  }
+
+  EXPECT_THAT(collection, ElementsAre(101, 103, 105));
 }
 
-TEST(MapTest, can_const_map_rvalue_collection) {
-  std::list<int> input{1, 3, 5};
+TEST(MapTest, MapOverNonConstCollection) {
+  // For Map, both const and non-const iterators return the same type (i.e. the return value of the mapping-function)
+  vector<int> collection{1, 3, 5};
+  auto iterator = Map(collection, ToString);
 
-  auto map = Map(std::move(input), [](const auto& value) { return std::to_string(value); });
-  EXPECT_THAT(std::as_const(map), ElementsAre("1", "3", "5"));
+  TEST_NON_CONST_ITERATOR(iterator, std::string);
+  TEST_CONST_ITERATOR(iterator, std::string);
+  EXPECT_TYPE(std::string, decltype(iterator)::value_type);
 }
 
-TEST(MapTest, can_non_const_map_rvalue_collection) {
-  std::list<int> input{1, 3, 5};
+TEST(MapTest, MapOverConstCollection) {
+  // For Map, both const and non-const iterators return the same type (i.e. the return value of the mapping-function)
+  vector<int> collection{1, 3, 5};
+  auto iterator = Map(std::as_const(collection), ToString);
 
-  auto map = Map(std::move(input), [](const auto& value) { return std::to_string(value); });
-  EXPECT_THAT(AppendAll(&map, "-suffix"), ElementsAre("1-suffix", "3-suffix", "5-suffix"));
+  TEST_NON_CONST_ITERATOR(iterator, std::string);
+  TEST_CONST_ITERATOR(iterator, std::string);
+  EXPECT_TYPE(std::string, decltype(iterator)::value_type);
+}
+
+TEST(MapTest, MapRvalueCollection) {
+  // For Map, both const and non-const iterators return the same type (i.e. the return value of the mapping-function)
+  vector<int> collection{1, 3, 5};
+  auto iterator = Map(std::move(collection), ToString);
+
+  TEST_NON_CONST_ITERATOR(iterator, std::string);
+  TEST_CONST_ITERATOR(iterator, std::string);
+  EXPECT_TYPE(std::string, decltype(iterator)::value_type);
 }
 
 TEST(MapTest, MapKeys__extract_keys_from_std_map) {

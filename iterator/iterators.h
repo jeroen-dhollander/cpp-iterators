@@ -175,15 +175,11 @@ auto Map(_Iterable&& data, Function mapping_function) -> Mapped<_Iterable, Funct
 
 // Iterates over the keys of a std::map
 template <typename _Iterable>
-auto MapKeys(_Iterable&& map) {
-  return Map(std::forward<_Iterable>(map), [](const auto& map_pair) { return map_pair.first; });
-}
+auto MapKeys(_Iterable&& map);
 
 // Iterates over the values of a std::map
 template <typename _Iterable>
-auto MapValues(_Iterable&& map) {
-  return Map(std::forward<_Iterable>(map), [](const auto& map_pair) { return map_pair.second; });
-}
+auto MapValues(_Iterable&& map);
 
 // Returns an iterator over the elements for which filter(element) returns 'true'
 template <typename _Iterable, typename FilterFunction>
@@ -806,29 +802,30 @@ class Mapped {
   using _iterable_value_type = typename _iterable::value_type;
   using _iterable_const_iterator = typename _iterable::const_iterator;
   using _iterable_iterator = typename _iterable::iterator;
+  using _non_const_iterator = _Iterator<_iterable_iterator, typename std::remove_reference_t<Function>>;
 
-  using iterator = _Iterator<_iterable_iterator, typename std::remove_reference_t<Function>>;
   using const_iterator = _Iterator<_iterable_const_iterator, typename std::remove_reference_t<Function>>;
+  using iterator = typename std::conditional_t<details::is_const_type_v<T>, const_iterator, _non_const_iterator>;
   using value_type = typename std::result_of<Function(_iterable_value_type&)>::type;
 
   Mapped(T&& iterable, Function&& mapping_function)
       : iterable_(std::forward<T>(iterable)), mapping_function_(std::forward<Function>(mapping_function)) {
   }
 
-  auto begin() {
+  iterator begin() {
     return MakeIterator(std::begin(iterable_));
   }
 
-  auto end() {
+  iterator end() {
     return MakeIterator(std::end(iterable_));
   }
 
-  auto begin() const {
-    return MakeIterator(std::begin(iterable_));
+  const_iterator begin() const {
+    return MakeConstIterator(std::cbegin(iterable_));
   }
 
-  auto end() const {
-    return MakeIterator(std::end(iterable_));
+  const_iterator end() const {
+    return MakeConstIterator(std::cend(iterable_));
   }
 
   template <typename __iterable, typename _function>
@@ -839,10 +836,6 @@ class Mapped {
     }
 
     auto operator*() {
-      return mapping_function_(*begin_);
-    }
-
-    const auto& operator*() const {
       return mapping_function_(*begin_);
     }
 
@@ -864,7 +857,7 @@ class Mapped {
   };
 
  private:
-  const_iterator MakeIterator(_iterable_const_iterator begin_iterator) const {
+  const_iterator MakeConstIterator(_iterable_const_iterator begin_iterator) const {
     return const_iterator(begin_iterator, std::cend(iterable_), mapping_function_);
   }
 
@@ -879,6 +872,16 @@ class Mapped {
 template <typename _Iterable, typename Function>
 auto Map(_Iterable&& data, Function mapping_function) -> Mapped<_Iterable, Function> {
   return Mapped<_Iterable, Function>(std::forward<_Iterable>(data), std::forward<Function>(mapping_function));
+}
+
+template <typename _Iterable>
+auto MapKeys(_Iterable&& map) {
+  return Map(std::forward<_Iterable>(map), [](const auto& map_pair) { return map_pair.first; });
+}
+
+template <typename _Iterable>
+auto MapValues(_Iterable&& map) {
+  return Map(std::forward<_Iterable>(map), [](const auto& map_pair) { return map_pair.second; });
 }
 
 template <typename T, typename FilterFunction>
