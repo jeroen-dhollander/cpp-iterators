@@ -245,35 +245,50 @@ TEST(IterateTest, IterateRvalueCollection) {
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
-TEST(ReverseTest, can_iterate_const_collection) {
-  list<int> collection{AnyCollection()};
+TEST(ReverseTest, ReturnsCorrectValues) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Reverse(collection);
 
-  auto const_iterator = Reverse(std::as_const(collection));
-  EXPECT_THAT(std::as_const(const_iterator), ElementsAreArray(AnyCollectionReversed()));
+  EXPECT_THAT(iterator, ElementsAre(5, 3, 1));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre(5, 3, 1));
 }
 
-TEST(ReverseTest, can_const_iterate_non_const_collection) {
-  list<int> collection{AnyCollection()};
+TEST(ReverseTest, CanModifyValues) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Reverse(collection);
 
-  auto result = Reverse(collection);
-  EXPECT_THAT(std::as_const(result), ElementsAreArray(AnyCollectionReversed()));
+  int& first = *iterator.begin();
+  first = 123;
+
+  EXPECT_THAT(iterator, ElementsAre(123, 3, 1));
 }
 
-TEST(ReverseTest, can_non_const_iterate_non_const_collection) {
-  list<int> collection{AnyCollection()};
+TEST(ReverseTest, ReverseOverNonConstCollection) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Reverse(collection);
 
-  auto result = Reverse(collection);
-  EXPECT_THAT(IncreaseAll(&result), ElementsAreArray(IncreaseAll(&AnyCollectionReversed())));
+  TEST_NON_CONST_ITERATOR(iterator, int&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
-TEST(ReverseTest, can_const_iterate_rvalue_collection) {
-  auto result = Reverse(AnyCollection());
-  EXPECT_THAT(std::as_const(result), ElementsAreArray(AnyCollectionReversed()));
+TEST(ReverseTest, ReverseOverConstCollection) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  vector<int> collection{1, 3, 5};
+  auto iterator = Reverse(std::as_const(collection));
+
+  TEST_NON_CONST_ITERATOR(iterator, int const&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
-TEST(ReverseTest, can_non_const_iterate_rvalue_collection) {
-  auto result = Reverse(AnyCollection());
-  EXPECT_THAT(IncreaseAll(&result), ElementsAreArray(IncreaseAll(&AnyCollectionReversed())));
+TEST(ReverseTest, ReverseRvalueCollection) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Reverse(std::move(collection));
+
+  TEST_NON_CONST_ITERATOR(iterator, int&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
 TEST(JoinTest, can_iterate_2_const_collections) {

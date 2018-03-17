@@ -68,12 +68,28 @@ struct non_const_iterator_helper<T, true> {
   typedef typename remove_cvref_t<T>::const_iterator type;
 };
 
-// Returns T::iterator if the iterator is non_const,
+// Returns T::iterator if T is non_const,
 // returns T::const_iterator if it is const.
 // e.g. non_const_iterator_t<vector<int>> --> vector<int>::iterator
 // e.g. non_const_iterator_t<const vector<int>> --> vector<int>::const_iterator
 template <class T>
 using non_const_iterator_t = typename non_const_iterator_helper<T, is_const_type<T>::value>::type;
+
+template <class T, bool>
+struct non_const_reverse_iterator_helper {
+  typedef typename remove_cvref_t<T>::reverse_iterator type;
+};
+template <class T>
+struct non_const_reverse_iterator_helper<T, true> {
+  typedef typename remove_cvref_t<T>::const_reverse_iterator type;
+};
+
+// Returns T::reverse_iterator if T is non_const,
+// returns T::const_reverse_iterator if it is const.
+// e.g. non_const_reverse_iterator_t<vector<int>> --> vector<int>::reverse_iterator
+// e.g. non_const_reverse_iterator_t<const vector<int>> --> vector<int>::const_reverse_iterator
+template <class T>
+using non_const_reverse_iterator_t = typename non_const_reverse_iterator_helper<T, is_const_type<T>::value>::type;
 
 }  // namespace details
 
@@ -710,25 +726,25 @@ class Reversed {
 
   using value_type = typename _iterable::value_type;
   using const_iterator = typename _iterable::const_reverse_iterator;
-  using iterator = typename _iterable::reverse_iterator;
+  using iterator = details::non_const_reverse_iterator_t<T>;
 
   explicit Reversed(T&& iterable) : iterable_(std::forward<T>(iterable)) {
   }
 
-  auto begin() {
+  iterator begin() {
     return std::rbegin(iterable_);
   }
 
-  auto end() {
+  iterator end() {
     return std::rend(iterable_);
   }
 
-  auto begin() const {
-    return std::rbegin(iterable_);
+  const_iterator begin() const {
+    return std::crbegin(iterable_);
   }
 
-  auto end() const {
-    return std::rend(iterable_);
+  const_iterator end() const {
+    return std::crend(iterable_);
   }
 
  private:
