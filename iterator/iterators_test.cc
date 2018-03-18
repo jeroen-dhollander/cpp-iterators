@@ -444,98 +444,68 @@ TEST(MapTest, MapValues__extract_values_from_std_map) {
   EXPECT_THAT(MapValues(input), ElementsAre(1, 2));
 }
 
-TEST(FilterTest, can_filter_first_value) {
-  std::list<int> input{1, 2};
-  auto filter_function = [](const int& value) { return value > 1; };
-
-  EXPECT_THAT(Filter(input, filter_function), ElementsAre(2));
+static bool is_odd(const int& value) {
+  return (value % 2) != 0;
 }
 
-TEST(FilterTest, can_filter_consecutive_values) {
-  std::list<int> input{1, 2, 3, 4, 5};
-  auto filter_function = [](const int& value) { return value == 1 || value == 5; };
+TEST(FilterTest, ReturnsCorrectValues) {
+  vector<int> collection{1, 2, 3, 4, 5};
+  auto iterator = Filter(collection, is_odd);
 
-  EXPECT_THAT(Filter(input, filter_function), ElementsAre(1, 5));
+  EXPECT_THAT(iterator, ElementsAre(1, 3, 5));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre(1, 3, 5));
 }
 
-TEST(FilterTest, can_const_filter_const_collection) {
-  std::list<int> input{1, 2, 3, 4, 5};
-  auto filter_function = [](const int& value) { return value % 2 == 0; };
+TEST(FilterTest, CanFilterFirstValue) {
+  vector<int> collection{0, 1};
+  auto iterator = Filter(collection, is_odd);
 
-  auto result = Filter(std::as_const(input), filter_function);
-  EXPECT_THAT(std::as_const(result), ElementsAre(2, 4));
+  EXPECT_THAT(iterator, ElementsAre(1));
 }
 
-TEST(FilterTest, can_const_filter_non_const_collection) {
-  std::list<int> input{1, 2, 3, 4, 5};
-  auto filter_function = [](const int& value) { return value % 2 == 0; };
+TEST(FilterTest, CanFilterConsecutiveValues) {
+  vector<int> collection{0, 0, 0, 1, 2, 2, 2, 3, 4, 4, 4};
+  auto iterator = Filter(collection, is_odd);
 
-  auto result = Filter(input, filter_function);
-  EXPECT_THAT(std::as_const(result), ElementsAre(2, 4));
+  EXPECT_THAT(iterator, ElementsAre(1, 3));
 }
 
-TEST(FilterTest, can_non_const_filter_non_const_collection) {
-  std::list<int> input{1, 2, 3, 4, 5};
-  auto filter_function = [](const int& value) { return value % 2 == 0; };
+TEST(FilterTest, CanModifyValues) {
+  vector<int> collection{1, 2, 3, 4, 5};
+  auto iterator = Filter(collection, is_odd);
 
-  auto result = Filter(input, filter_function);
-  EXPECT_THAT(DoubleAll(&result), ElementsAre(4, 8));
+  int& first = *iterator.begin();
+  first = 123;
+
+  EXPECT_THAT(iterator, ElementsAre(123, 3, 5));
 }
 
-TEST(FilterTest, can_const_filter_rvalue_collection) {
-  std::list<int> input{1, 2, 3, 4, 5};
-  auto filter_function = [](const int& value) { return value % 2 == 0; };
+TEST(FilterTest, FilterOverNonConstCollection) {
+  vector<int> collection{1, 2, 3, 4, 5};
+  auto iterator = Filter(collection, is_odd);
 
-  auto result = Filter(std::move(input), filter_function);
-  EXPECT_THAT(std::as_const(result), ElementsAre(2, 4));
+  TEST_NON_CONST_ITERATOR(iterator, int&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
-TEST(FilterTest, can_non_const_filter_rvalue_collection) {
-  std::list<int> input{1, 2, 3, 4, 5};
-  auto filter_function = [](const int& value) { return value % 2 == 0; };
+TEST(FilterTest, FilterOverConstCollection) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  vector<int> collection{1, 2, 3, 4, 5};
+  auto iterator = Filter(std::as_const(collection), is_odd);
 
-  auto result = Filter(std::move(input), filter_function);
-  EXPECT_THAT(DoubleAll(&result), ElementsAre(4, 8));
+  TEST_NON_CONST_ITERATOR(iterator, int const&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
-TEST(AsReferences, can_const_iterate_const_pointer_collection) {
-  int values[] = {1, 3, 5};
-  std::list<int*> input{&values[0], &values[1], &values[2]};
+TEST(FilterTest, FilterRvalueCollection) {
+  vector<int> collection{1, 2, 3, 4, 5};
+  auto iterator = Filter(std::move(collection), is_odd);
 
-  auto result = AsReferences(std::as_const(input));
-  EXPECT_THAT(std::as_const(result), ElementsAreArray(values));
-}
-
-TEST(AsReferences, can_const_iterate_non_const_pointer_collection) {
-  int values[] = {1, 3, 5};
-  std::list<int*> input{&values[0], &values[1], &values[2]};
-
-  auto result = AsReferences(input);
-  EXPECT_THAT(std::as_const(result), ElementsAreArray(values));
-}
-
-TEST(AsReferences, can_non_const_iterate_non_const_pointer_collection) {
-  int values[] = {1, 3, 5};
-  std::list<int*> input{&values[0], &values[1], &values[2]};
-
-  auto result = AsReferences(std::move(input));
-  EXPECT_THAT(IncreaseAll(&result), ElementsAre(2, 4, 6));
-}
-
-TEST(AsReferences, can_const_iterate_rvalue_pointer_collection) {
-  int values[] = {1, 3, 5};
-  std::list<int*> input{&values[0], &values[1], &values[2]};
-
-  auto result = AsReferences(std::move(input));
-  EXPECT_THAT(std::as_const(result), ElementsAreArray(values));
-}
-
-TEST(AsReferences, can_non_const_iterate_rvalue_pointer_collection) {
-  int values[] = {1, 3, 5};
-  std::list<int*> input{&values[0], &values[1], &values[2]};
-
-  auto result = AsReferences(std::move(input));
-  EXPECT_THAT(IncreaseAll(&result), ElementsAre(2, 4, 6));
+  TEST_NON_CONST_ITERATOR(iterator, int&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
 std::list<std::unique_ptr<int>> ToUniquePtrList(int* values, int values_size) {
