@@ -63,52 +63,6 @@ std::string type_name() {
     EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::const_iterator>().operator*())); \
   }
 
-list<int> AnyCollection() {
-  return list<int>{1, 3, 5};
-}
-
-list<int> AnyCollectionReversed() {
-  return {5, 3, 1};
-}
-
-// Executes '++' on each value in the iterable.
-// Used to ensure we can non-const access the elements
-template <typename _Iterable>
-auto& IncreaseAll(_Iterable* iterable) {
-  for (auto& value : *iterable)
-    value++;
-  return *iterable;
-}
-
-// Doubles each value in the iterable.
-// Used to ensure we can non-const access the elements
-template <typename _Iterable>
-auto DoubleAll(_Iterable* iterable) {
-  for (auto& value : *iterable)
-    value *= 2;
-  return *iterable;
-}
-
-// Appends the given string to each (string) value in the iterable.
-// Used to ensure we can non-const access the elements
-template <typename _Iterable>
-auto AppendAll(_Iterable* iterable, string suffix) {
-  list<std::string> result;
-  for (auto& value : *iterable) {
-    value += suffix;
-    result.push_back(value);
-  }
-  return result;
-}
-
-template <typename _Enumerator>
-string FormatEnumerate(const _Enumerator& iterable) {
-  string result{};
-  for (const auto& item : iterable)
-    result += std::to_string(item.Position()) + ": " + item.Value() + ", ";
-  return result;
-}
-
 TEST(IsConstTest, SanityCheck) {
   // Test that our 'details::is_const_type' utility works as expected
 #define IS_CONST(_type) details::is_const_type<_type>::value
@@ -160,6 +114,14 @@ TEST(NonConstReverseIterator, SanityCheck) {
   EXPECT_TYPE(vector<int>::reverse_iterator, details::non_const_reverse_iterator_t<vector<int>&&>);
   EXPECT_TYPE(vector<int>::const_reverse_iterator, details::non_const_reverse_iterator_t<const vector<int>>);
   EXPECT_TYPE(vector<int>::const_reverse_iterator, details::non_const_reverse_iterator_t<const vector<int>&>);
+}
+
+template <typename _Enumerator>
+string FormatEnumerate(const _Enumerator& iterable) {
+  string result{};
+  for (const auto& item : iterable)
+    result += std::to_string(item.Position()) + ": " + item.Value() + ", ";
+  return result;
 }
 
 TEST(EnumerateTest, ReturnsCorrectValues) {
@@ -624,65 +586,64 @@ TEST(AsReferencesTest_pointer, IterateRvalueCollection) {
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
-TEST(ChainTest, can_iterate_non_empty_collections) {
+TEST(ChainTest, ReturnsCorrectValues) {
   vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  auto iterator = Chain(collection);
 
-  auto result = Chain(collection);
-  EXPECT_THAT(result, ElementsAre(1, 2, 3, 4, 5, 6));
+  EXPECT_THAT(iterator, ElementsAre(1, 2, 3, 4, 5, 6));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre(1, 2, 3, 4, 5, 6));
 }
 
-TEST(ChainTest, skips_over_empty_first_collections) {
-  vector<list<int>> collection{{}, {}, {1, 2, 3}};
+TEST(ChainTest, CanModifyValues) {
+  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  auto iterator = Chain(collection);
 
-  auto result = Chain(collection);
-  EXPECT_THAT(result, ElementsAre(1, 2, 3));
+  int& first = *iterator.begin();
+  first = 123;
+
+  EXPECT_THAT(iterator, ElementsAre(123, 2, 3, 4, 5, 6));
 }
 
-TEST(ChainTest, skips_over_empty_collections) {
-  vector<list<int>> collection{{1}, {}, {}, {2, 3}, {}};
+TEST(ChainTest, ChainOverNonConstCollection) {
+  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  auto iterator = Chain(collection);
 
-  auto result = Chain(collection);
-  EXPECT_THAT(result, ElementsAre(1, 2, 3));
+  TEST_NON_CONST_ITERATOR(iterator, int&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
-TEST(ChainTest, survives_empty_outer_collection) {
+TEST(ChainTest, ChainOverConstCollection) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  auto iterator = Chain(std::as_const(collection));
+
+  TEST_NON_CONST_ITERATOR(iterator, int const&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(ChainTest, ChainRvalueCollection) {
+  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  auto iterator = Chain(std::move(collection));
+
+  TEST_NON_CONST_ITERATOR(iterator, int&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(ChainTest, SkipsOverEmptyCollections) {
+  vector<list<int>> collection{{}, {}, {1}, {}, {}, {2}, {}, {}};
+
+  auto result = Chain(collection);
+  EXPECT_THAT(result, ElementsAre(1, 2));
+}
+
+TEST(ChainTest, SurvivesEmptyOuterCollection) {
   vector<list<int>> collection{};
 
   auto result = Chain(collection);
   EXPECT_THAT(result, ElementsAre());
-}
-
-TEST(ChainTest, can_iterate_const_collections) {
-  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
-
-  auto result = Chain(std::as_const(collection));
-  EXPECT_THAT(std::as_const(result), ElementsAre(1, 2, 3, 4, 5, 6));
-}
-
-TEST(ChainTest, can_const_iterate_non_const_collection) {
-  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
-
-  auto result = Chain(collection);
-  EXPECT_THAT(std::as_const(result), ElementsAre(1, 2, 3, 4, 5, 6));
-}
-
-TEST(ChainTest, can_non_const_iterate_non_const_collection) {
-  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
-
-  auto result = Chain(collection);
-  EXPECT_THAT(DoubleAll(&result), ElementsAre(2, 4, 6, 8, 10, 12));
-}
-
-TEST(ChainTest, can_const_iterate_rvalue_collection) {
-  auto result = Chain(vector<list<int>>{{1, 2, 3}, {4, 5, 6}});
-
-  EXPECT_THAT(std::as_const(result), ElementsAre(1, 2, 3, 4, 5, 6));
-}
-
-TEST(ChainTest, can_non_const_iterate_rvalue_collection) {
-  auto result = Chain(vector<list<int>>{{1, 2, 3}, {4, 5, 6}});
-
-  EXPECT_THAT(DoubleAll(&result), ElementsAre(2, 4, 6, 8, 10, 12));
 }
 
 }  // namespace iterators

@@ -390,28 +390,29 @@ class Chained {
   using _inner_collection = details::remove_cvref_t<typename _outer_collection::value_type>;
   using _inner_const_iterator = typename _inner_collection::const_iterator;
   using _inner_iterator = typename _inner_collection::iterator;
+  using _non_const_iterator = _Iterator<_outer_iterator, _inner_iterator>;
 
-  using iterator = _Iterator<_outer_iterator, _inner_iterator>;
-  using const_iterator = _Iterator<_outer_const_iterator, _inner_const_iterator>;
   using value_type = typename _inner_collection::value_type;
+  using const_iterator = _Iterator<_outer_const_iterator, _inner_const_iterator>;
+  using iterator = typename std::conditional_t<details::is_const_type_v<T>, const_iterator, _non_const_iterator>;
 
   Chained(T&& data) : data_(std::forward<T>(data)) {
   }
 
-  auto begin() {
-    return MakeIterator(std::begin(data_));
+  iterator begin() {
+    return iterator{std::begin(data_), std::end(data_)};
   }
 
-  auto end() {
-    return MakeIterator(std::end(data_));
+  iterator end() {
+    return iterator{std::end(data_), std::end(data_)};
   }
 
-  auto begin() const {
-    return MakeIterator(std::begin(data_));
+  const_iterator begin() const {
+    return const_iterator{std::cbegin(data_), std::cend(data_)};
   }
 
-  auto end() const {
-    return MakeIterator(std::end(data_));
+  const_iterator end() const {
+    return const_iterator{std::cend(data_), std::cend(data_)};
   }
 
   template <class __outer_iterator, class __inner_iterator>
@@ -480,14 +481,6 @@ class Chained {
   };
 
  private:
-  const_iterator MakeIterator(_outer_const_iterator begin_iterator) const {
-    return const_iterator(begin_iterator, std::cend(data_));
-  }
-
-  iterator MakeIterator(_outer_iterator begin_iterator) {
-    return iterator(begin_iterator, std::end(data_));
-  }
-
   T data_;
 };
 
