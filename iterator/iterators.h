@@ -9,41 +9,41 @@
 #include <utility>
 
 namespace iterators {
-template <class>
+template <typename>
 class Chained;
-template <class>
+template <typename>
 class Enumerated;
-template <class>
+template <typename>
 class Iterated;
-template <class>
+template <typename>
 class ReferencedUnique;
-template <class>
+template <typename>
 class Referenced;
-template <class>
+template <typename>
 class Reversed;
-template <class, class>
+template <typename, typename>
 class Joined;
-template <class, typename>
+template <typename, typename>
 class Mapped;
-template <class, typename>
+template <typename, typename>
 class Filtered;
 
 namespace details {
 // clang-format off
-template <class T> struct is_unique_pointer_helper : std::false_type {};
-template <class T> struct is_unique_pointer_helper<std::unique_ptr<T>> : std::true_type {};
-template <class T> struct is_unique_pointer : is_unique_pointer_helper<typename std::remove_cv_t<T>> {};
+template <typename T> struct is_unique_pointer_helper : std::false_type {};
+template <typename T> struct is_unique_pointer_helper<std::unique_ptr<T>> : std::true_type {};
+template <typename T> struct is_unique_pointer : is_unique_pointer_helper<typename std::remove_cv_t<T>> {};
 // clang-format on
 
-template <class T>
+template <typename T>
 struct remove_cvref {
   typedef std::remove_cv_t<std::remove_reference_t<T>> type;
 };
-template <class T>
+template <typename T>
 using remove_cvref_t = typename remove_cvref<T>::type;
 
 // Returns true if T is a collection over unique_ptr, e.g. vector<std::unique_ptr<int>>
-template <class T>
+template <typename T>
 struct is_unique_pointer_collection : is_unique_pointer<typename remove_cvref_t<T>::value_type> {};
 }  // namespace details
 
@@ -193,14 +193,14 @@ namespace details {
 // clang-format off
 // Note: 'std::is_const' is pretty strict, e.g. 'std::is_const<const int&>' returns 'false'.
 //       So we're using this construct that checks if it is const in any way
-template<class T> struct is_const_type : std::false_type {};
-template<class T> struct is_const_type<const T> : std::true_type {};
-template<class T> struct is_const_type<const T&> : std::true_type {};
-template<class T> struct is_const_type<const T*> : std::true_type {};
-template<class T> struct is_const_type<T*const> : std::true_type {};
-template<class T> struct is_const_type<const T*&> : std::true_type {};
-template<class T> struct is_const_type<const T&&> : std::true_type {};
-template<class T> struct is_const_type<const T*&&> : std::true_type {};
+template<typename T> struct is_const_type : std::false_type {};
+template<typename T> struct is_const_type<const T> : std::true_type {};
+template<typename T> struct is_const_type<const T&> : std::true_type {};
+template<typename T> struct is_const_type<const T*> : std::true_type {};
+template<typename T> struct is_const_type<T*const> : std::true_type {};
+template<typename T> struct is_const_type<const T*&> : std::true_type {};
+template<typename T> struct is_const_type<const T&&> : std::true_type {};
+template<typename T> struct is_const_type<const T*&&> : std::true_type {};
 // clang-format on
 
 template <typename T>
@@ -379,10 +379,10 @@ auto Iterate(T&& iterable) -> Iterated<T> {
   return Iterated<T>{std::forward<T>(iterable)};
 }
 
-template <class T>
+template <typename T>
 class Chained {
  public:
-  template <class, class>
+  template <typename, typename>
   class _Iterator;
   using _outer_collection = details::remove_cvref_t<T>;
   using _outer_const_iterator = typename _outer_collection::const_iterator;
@@ -415,7 +415,7 @@ class Chained {
     return const_iterator{std::cend(data_), std::cend(data_)};
   }
 
-  template <class __outer_iterator, class __inner_iterator>
+  template <typename __outer_iterator, typename __inner_iterator>
   class _Iterator {
    public:
     _Iterator(__outer_iterator begin, __outer_iterator end)
@@ -424,10 +424,6 @@ class Chained {
       SkipEmptyInnerCollections();
     }
     auto& operator*() {
-      return *inner_begin_;
-    }
-
-    auto& operator*() const {
       return *inner_begin_;
     }
 
@@ -566,7 +562,7 @@ auto AsReferences(T&& iterable) -> Referenced<T> {
 template <typename T>
 class ReferencedUnique {
  public:
-  template <class, class>
+  template <typename, typename>
   class _Iterator;
 
   using _collection_type = typename std::remove_reference_t<T>;
@@ -606,7 +602,7 @@ class ReferencedUnique {
 
     __return_value& operator*() {
       auto& unique_pointer = *begin_;
-      auto pointer = unique_pointer.get();
+      auto* pointer = unique_pointer.get();
       return *pointer;
     }
 
@@ -672,7 +668,7 @@ auto Reverse(T&& iterable) -> Reversed<T> {
   return Reversed<T>{std::forward<T>(iterable)};
 }
 
-template <class T1, class T2>
+template <typename T1, typename T2>
 class Joined {
  public:
   using _iterable_1 = typename std::remove_reference_t<T1>;
@@ -686,7 +682,7 @@ class Joined {
   static_assert((std::is_same<typename _iterable_1::value_type, typename _iterable_2::value_type>::value),
                 "value_type must be same type for both collections");
 
-  template <class, class>
+  template <typename, typename>
   class _Iterator;
   using _non_const_iterator = _Iterator<typename _iterable_1::iterator, typename _iterable_2::iterator>;
 
@@ -713,7 +709,7 @@ class Joined {
     return MakeConstIterator(std::cend(first_), std::cend(second_));
   }
 
-  template <class _FirstIterator, class _SecondIterator>
+  template <typename _FirstIterator, typename _SecondIterator>
   class _Iterator {
    public:
     _Iterator(_FirstIterator first, _FirstIterator first_end, _SecondIterator second, _SecondIterator second_end)
@@ -767,7 +763,7 @@ auto Join(T1&& iterable_1, T2&& iterable_2) -> Joined<T1, T2> {
 template <typename T, typename Function>
 class Mapped {
  public:
-  template <class, typename>
+  template <typename, typename>
   class _Iterator;
   using _iterable = typename std::remove_reference_t<T>;
   using _iterable_value_type = typename _iterable::value_type;
@@ -858,7 +854,7 @@ auto MapValues(_Iterable&& map) {
 template <typename T, typename FilterFunction>
 class Filtered {
  public:
-  template <class, typename>
+  template <typename, typename>
   class _Iterator;
   using _iterable = typename std::remove_reference_t<T>;
   using _iterable_const_iterator = typename _iterable::const_iterator;
