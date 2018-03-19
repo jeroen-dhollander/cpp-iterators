@@ -515,6 +515,61 @@ std::list<std::unique_ptr<int>> ToUniquePtrList(int* values, int values_size) {
   return result;
 }
 
+TEST(AsReferencesTest_unique_ptr, ReturnsCorrectValues) {
+  int values[] = {1, 3, 5};
+  auto collection{ToUniquePtrList(values, 3)};
+  auto iterator = AsReferences(collection);
+
+  EXPECT_THAT(iterator, ElementsAre(1, 3, 5));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre(1, 3, 5));
+}
+
+TEST(AsReferencesTest_unique_ptr, CanModifyValues) {
+  int values[] = {1, 3, 5};
+  auto collection{ToUniquePtrList(values, 3)};
+  auto iterator = AsReferences(collection);
+
+  int& first = *iterator.begin();
+  first = 123;
+
+  EXPECT_THAT(iterator, ElementsAre(123, 3, 5));
+}
+
+TEST(AsReferencesTest_unique_ptr, IterateOverNonConstCollection) {
+  int values[] = {1, 3, 5};
+  auto collection{ToUniquePtrList(values, 3)};
+  auto iterator = AsReferences(collection);
+
+  TEST_NON_CONST_ITERATOR(iterator, int&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(AsReferencesTest_unique_ptr, IterateOverConstCollection) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  int values[] = {1, 3, 5};
+  auto collection{ToUniquePtrList(values, 3)};
+  auto iterator = AsReferences(std::as_const(collection));
+
+  TEST_NON_CONST_ITERATOR(iterator, int const&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(AsReferencesTest_unique_ptr, IterateRvalueCollection) {
+  int values[] = {1, 3, 5};
+  auto collection{ToUniquePtrList(values, 3)};
+  auto iterator = AsReferences(std::move(collection));
+
+  TEST_NON_CONST_ITERATOR(iterator, int&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+#if 0
+#endif
+
+// DO_NOT_PUSH here
+
 TEST(AsReferences_unique_ptr, can_const_iterate_const_pointer_collection) {
   int values[] = {1, 3, 5};
   auto input{ToUniquePtrList(values, 3)};

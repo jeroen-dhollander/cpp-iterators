@@ -581,7 +581,7 @@ auto AsReferences(T&& iterable) -> Referenced<T> {
 template <typename T>
 class ReferencedUnique {
  public:
-  template <class>
+  template <class, class>
   class _Iterator;
 
   using _collection_type = typename std::remove_reference_t<T>;
@@ -590,42 +590,37 @@ class ReferencedUnique {
   using _collection_iterator = typename _collection_type::iterator;
 
   using value_type = typename _collection_value_type::element_type;
-  using const_iterator = _Iterator<_collection_const_iterator>;
-  using iterator = _Iterator<_collection_iterator>;
+  using _non_const_iterator = _Iterator<_collection_iterator, value_type>;
+  using const_iterator = _Iterator<_collection_const_iterator, const value_type>;
+  using iterator = typename std::conditional_t<details::is_const_type_v<T>, const_iterator, _non_const_iterator>;
 
   explicit ReferencedUnique(T&& iterable) : iterable_(std::forward<T>(iterable)) {
   }
 
-  auto begin() {
-    return MakeIterator(std::begin(iterable_));
+  iterator begin() {
+    return iterator{std::begin(iterable_), std::end(iterable_)};
   }
 
-  auto end() {
-    return MakeIterator(std::end(iterable_));
+  iterator end() {
+    return iterator{std::end(iterable_), std::end(iterable_)};
   }
 
-  auto begin() const {
-    return MakeIterator(std::begin(iterable_));
+  const_iterator begin() const {
+    return const_iterator{std::cbegin(iterable_), std::cend(iterable_)};
   }
 
-  auto end() const {
-    return MakeIterator(std::end(iterable_));
+  const_iterator end() const {
+    return const_iterator{std::cend(iterable_), std::cend(iterable_)};
   }
 
-  template <class __iterator>
+  template <typename __iterator, typename __return_value>
   class _Iterator {
    public:
     _Iterator(__iterator begin, __iterator end) : begin_(begin), end_(end) {
     }
 
-    value_type& operator*() {
+    __return_value& operator*() {
       auto& unique_pointer = *begin_;
-      auto pointer = unique_pointer.get();
-      return *pointer;
-    }
-
-    const value_type& operator*() const {
-      const auto& unique_pointer = *begin_;
       auto pointer = unique_pointer.get();
       return *pointer;
     }
@@ -645,15 +640,6 @@ class ReferencedUnique {
     __iterator begin_;
     __iterator end_;
   };
-
- private:
-  const_iterator MakeIterator(_collection_const_iterator begin_iterator) const {
-    return const_iterator(begin_iterator, std::cend(iterable_));
-  }
-
-  iterator MakeIterator(_collection_iterator begin_iterator) {
-    return iterator(begin_iterator, std::end(iterable_));
-  }
 
  private:
   T iterable_;
