@@ -1,7 +1,7 @@
 #pragma once
 
-#ifndef _ITERATOR_UTILITIES_H_
-#define _ITERATOR_UTILITIES_H_
+#ifndef _CPP_ITERATORS_ITERATORS_H_
+#define _CPP_ITERATORS_ITERATORS_H_
 
 #include <iterator>
 #include <memory>
@@ -288,12 +288,21 @@ class Enumerated {
   template <typename __iterator, typename __return_type>
   class _Iterator {
    public:
+    // DO_NOT_PUSH calls non-existing constructor for 'Item()'
     _Iterator(__iterator begin, __iterator end, int position) : begin_(begin), end_(end), position_(position), item_{} {
       SetItem();
     }
 
     __return_type& operator*() {
       return item_;
+    }
+
+    __return_type& operator*() const {
+      // Dereferencing a const or a non-const iterator should not make a difference
+      // (as the constness of the iterator has no bearing on the returned value of the collection).
+      // However, as our iterator owns the return-value struct in this particular case,
+      // we must cast the const away to achieve this
+      return const_cast<__return_type&>(item_);
     }
 
     void operator++() {
@@ -423,7 +432,7 @@ class Chained {
       InitializeInnerCollection();
       SkipEmptyInnerCollections();
     }
-    auto& operator*() {
+    auto& operator*() const {
       return *inner_begin_;
     }
 
@@ -526,11 +535,7 @@ class Referenced {
     _Iterator(__iterator begin, __iterator end) : begin_(begin), end_(end) {
     }
 
-    __return_value& operator*() {
-      return **begin_;
-    }
-
-    const value_type& operator*() const {
+    __return_value& operator*() const {
       return **begin_;
     }
 
@@ -600,7 +605,7 @@ class ReferencedUnique {
     _Iterator(__iterator begin, __iterator end) : begin_(begin), end_(end) {
     }
 
-    __return_value& operator*() {
+    __return_value& operator*() const {
       auto& unique_pointer = *begin_;
       auto* pointer = unique_pointer.get();
       return *pointer;
@@ -715,7 +720,7 @@ class Joined {
     _Iterator(_FirstIterator first, _FirstIterator first_end, _SecondIterator second, _SecondIterator second_end)
         : first_(first), first_end_(first_end), second_(second), second_end_(second_end) {
     }
-    auto& operator*() {
+    auto& operator*() const {
       if (first_ != first_end_)
         return *first_;
       return *second_;
@@ -802,7 +807,7 @@ class Mapped {
         : begin_(begin), end_(end), mapping_function_(mapping_function) {
     }
 
-    auto operator*() {
+    auto operator*() const {
       return mapping_function_(*begin_);
     }
 
@@ -892,7 +897,7 @@ class Filtered {
       SkipFilteredEntries();
     }
 
-    auto& operator*() {
+    auto& operator*() const {
       return *begin_;
     }
 
@@ -947,4 +952,4 @@ auto Filter(_Iterable&& data, FilterFunction filter) -> Filtered<_Iterable, Filt
 
 }  // namespace iterators
 
-#endif  // _ITERATOR_UTILITIES_H_
+#endif  // _CPP_ITERATORS_ITERATORS_H_

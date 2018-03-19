@@ -42,25 +42,26 @@ std::string type_name() {
 #define EXPECT_TYPE(_expected, _actual) EXPECT_EQ(type_name<_expected>(), type_name<_actual>())
 
 // Tests that the non_const iterator has the correct type, and returns values of the expected type
-#define TEST_NON_CONST_ITERATOR(_iterable, _expected_type)                                      \
-  {                                                                                             \
-    using IterableClass = decltype(_iterable);                                                  \
-    /* Test begin/end return instances of _iterable::iterator */                                \
-    EXPECT_TYPE(IterableClass::iterator, decltype(_iterable.begin()));                          \
-    EXPECT_TYPE(IterableClass::iterator, decltype(_iterable.end()));                            \
-    /* Test iterator return value */                                                            \
-    EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::iterator>().operator*())); \
-  }
-
-// Tests that the const iterator has the correct type, and returns values of the expected type
-#define TEST_CONST_ITERATOR(_iterable, _expected_type)                                                \
+#define TEST_NON_CONST_ITERATOR(_iterable, _expected_type)                                            \
   {                                                                                                   \
     using IterableClass = decltype(_iterable);                                                        \
-    /* Test begin/end return instances of _iterable::const_iterator */                                \
-    EXPECT_TYPE(IterableClass::const_iterator, decltype(std::as_const(_iterable).begin()));           \
-    EXPECT_TYPE(IterableClass::const_iterator, decltype(std::as_const(_iterable).end()));             \
-    /* Test const_iterator return value */                                                            \
-    EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::const_iterator>().operator*())); \
+    /* Test begin/end return instances of _iterable::iterator */                                      \
+    EXPECT_TYPE(IterableClass::iterator, decltype(_iterable.begin()));                                \
+    EXPECT_TYPE(IterableClass::iterator, decltype(_iterable.end()));                                  \
+    /* Test iterator return value */                                                                  \
+    EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::iterator>().operator*()));       \
+    EXPECT_TYPE(_expected_type, decltype(std::declval<const IterableClass::iterator>().operator*())); \
+  }
+
+#define TEST_CONST_ITERATOR(_iterable, _expected_type)                                                      \
+  {                                                                                                         \
+    using IterableClass = decltype(_iterable);                                                              \
+    /* Test begin/end return instances of _iterable::const_iterator */                                      \
+    EXPECT_TYPE(IterableClass::const_iterator, decltype(std::as_const(_iterable).begin()));                 \
+    EXPECT_TYPE(IterableClass::const_iterator, decltype(std::as_const(_iterable).end()));                   \
+    /* Test const_iterator return value */                                                                  \
+    EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::const_iterator>().operator*()));       \
+    EXPECT_TYPE(_expected_type, decltype(std::declval<const IterableClass::const_iterator>().operator*())); \
   }
 
 TEST(IsConstTest, SanityCheck) {
