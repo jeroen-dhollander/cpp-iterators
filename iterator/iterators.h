@@ -232,6 +232,9 @@ using non_const_reverse_iterator_t =
 template <typename T>
 class Item {
  public:
+  Item() : Item(0, nullptr) {
+  }
+
   Item(int position, T* value) : position_(position), value_(value) {
   }
 
@@ -288,7 +291,6 @@ class Enumerated {
   template <typename __iterator, typename __return_type>
   class _Iterator {
    public:
-    // DO_NOT_PUSH calls non-existing constructor for 'Item()'
     _Iterator(__iterator begin, __iterator end, int position) : begin_(begin), end_(end), position_(position), item_{} {
       SetItem();
     }
