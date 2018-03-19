@@ -53,6 +53,7 @@ std::string type_name() {
     EXPECT_TYPE(_expected_type, decltype(std::declval<const IterableClass::iterator>().operator*())); \
   }
 
+// Tests that the const iterator has the correct type, and returns values of the expected type
 #define TEST_CONST_ITERATOR(_iterable, _expected_type)                                                      \
   {                                                                                                         \
     using IterableClass = decltype(_iterable);                                                              \
@@ -62,6 +63,30 @@ std::string type_name() {
     /* Test const_iterator return value */                                                                  \
     EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::const_iterator>().operator*()));       \
     EXPECT_TYPE(_expected_type, decltype(std::declval<const IterableClass::const_iterator>().operator*())); \
+  }
+
+// Tests that the const reverse iterator has the correct type, and returns values of the expected type
+#define TEST_CONST_REVERSE_ITERATOR(_iterable, _expected_type)                                                      \
+  {                                                                                                                 \
+    using IterableClass = decltype(_iterable);                                                                      \
+    /* Test begin/end return instances of _iterable::const_reverse_iterator */                                      \
+    EXPECT_TYPE(IterableClass::const_reverse_iterator, decltype(std::as_const(_iterable).rbegin()));                \
+    EXPECT_TYPE(IterableClass::const_reverse_iterator, decltype(std::as_const(_iterable).rend()));                  \
+    /* Test const_reverse_iterator return value */                                                                  \
+    EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::const_reverse_iterator>().operator*()));       \
+    EXPECT_TYPE(_expected_type, decltype(std::declval<const IterableClass::const_reverse_iterator>().operator*())); \
+  }
+
+// Tests that the non_const reverse iterator has the correct type, and returns values of the expected type
+#define TEST_NON_CONST_REVERSE_ITERATOR(_iterable, _expected_type)                                            \
+  {                                                                                                           \
+    using IterableClass = decltype(_iterable);                                                                \
+    /* Test begin/end return instances of _iterable::reverse_iterator */                                      \
+    EXPECT_TYPE(IterableClass::reverse_iterator, decltype(_iterable.rbegin()));                               \
+    EXPECT_TYPE(IterableClass::reverse_iterator, decltype(_iterable.rend()));                                 \
+    /* Test reverse_iterator return value */                                                                  \
+    EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::reverse_iterator>().operator*()));       \
+    EXPECT_TYPE(_expected_type, decltype(std::declval<const IterableClass::reverse_iterator>().operator*())); \
   }
 
 TEST(IsConstTest, SanityCheck) {
@@ -171,6 +196,52 @@ TEST(EnumerateTest, EnumerateRvalueCollection) {
   EXPECT_TYPE(Item<char>, decltype(iterator)::value_type);
 }
 
+TEST(EnumerateReverseTest, ReturnsCorrectValues) {
+  vector<char> collection{'A', 'B', 'C'};
+  auto iterator = Reverse(Enumerate(collection));
+
+  EXPECT_EQ("2: C, 1: B, 0: A, ", FormatEnumerate(iterator));
+  EXPECT_EQ("2: C, 1: B, 0: A, ", FormatEnumerate(std::as_const(iterator)));
+}
+
+TEST(EnumerateReverseTest, CanModifyValues) {
+  vector<char> collection{'A', 'B', 'C'};
+  auto iterator = Enumerate(collection);
+
+  auto& first = *iterator.rbegin();
+  first.Value() = 'Z';
+
+  EXPECT_THAT(collection, ElementsAre('A', 'B', 'Z'));
+}
+
+TEST(EnumerateReverseTest, EnumerateOverNonConstCollection) {
+  vector<char> collection{'A', 'B', 'C'};
+  auto iterator = Enumerate(collection);
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, Item<char>&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, Item<char> const&);
+  EXPECT_TYPE(Item<char>, decltype(iterator)::value_type);
+}
+
+TEST(EnumerateReverseTest, EnumerateOverConstCollection) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  vector<char> collection{'A', 'B', 'C'};
+  auto iterator = Enumerate(std::as_const(collection));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, Item<char> const&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, Item<char> const&);
+  EXPECT_TYPE(Item<char>, decltype(iterator)::value_type);
+}
+
+TEST(EnumerateReverseTest, EnumerateRvalueCollection) {
+  vector<char> collection{'A', 'B', 'C'};
+  auto iterator = Enumerate(std::move(collection));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, Item<char>&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, Item<char> const&);
+  EXPECT_TYPE(Item<char>, decltype(iterator)::value_type);
+}
+
 TEST(IterateTest, ReturnsCorrectValues) {
   vector<int> collection{1, 3, 5};
   auto iterator = Iterate(collection);
@@ -217,6 +288,52 @@ TEST(IterateTest, IterateRvalueCollection) {
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
+TEST(IterateReverseTest, ReturnsCorrectValues) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Reverse(Iterate(collection));
+
+  EXPECT_THAT(iterator, ElementsAre(5, 3, 1));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre(5, 3, 1));
+}
+
+TEST(IterateReverseTest, CanModifyValues) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Iterate(collection);
+
+  int& first = *iterator.rbegin();
+  first = 123;
+
+  EXPECT_THAT(iterator, ElementsAre(1, 3, 123));
+}
+
+TEST(IterateReverseTest, IterateOverNonConstCollection) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Iterate(collection);
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(IterateReverseTest, IterateOverConstCollection) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  vector<int> collection{1, 3, 5};
+  auto iterator = Iterate(std::as_const(collection));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int const&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(IterateReverseTest, IterateRvalueCollection) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Iterate(std::move(collection));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
 TEST(ReverseTest, ReturnsCorrectValues) {
   vector<int> collection{1, 3, 5};
   auto iterator = Reverse(collection);
@@ -232,7 +349,7 @@ TEST(ReverseTest, CanModifyValues) {
   int& first = *iterator.begin();
   first = 123;
 
-  EXPECT_THAT(iterator, ElementsAre(123, 3, 1));
+  EXPECT_THAT(collection, ElementsAre(1, 3, 123));
 }
 
 TEST(ReverseTest, ReverseOverNonConstCollection) {
@@ -260,6 +377,52 @@ TEST(ReverseTest, ReverseRvalueCollection) {
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
   TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(ReverseReverseTest, ReturnsCorrectValues) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Reverse(Reverse(collection));
+
+  EXPECT_THAT(iterator, ElementsAre(1, 3, 5));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre(1, 3, 5));
+}
+
+TEST(ReverseReverseTest, CanModifyValues) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Reverse(collection);
+
+  int& first = *iterator.rbegin();
+  first = 123;
+
+  EXPECT_THAT(collection, ElementsAre(123, 3, 5));
+}
+
+TEST(ReverseReverseTest, ReverseOverNonConstCollection) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Reverse(collection);
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(ReverseReverseTest, ReverseOverConstCollection) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  vector<int> collection{1, 3, 5};
+  auto iterator = Reverse(std::as_const(collection));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int const&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(ReverseReverseTest, ReverseRvalueCollection) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Reverse(std::move(collection));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
@@ -338,6 +501,72 @@ TEST(JoinTest, JoinRvalueCollections) {
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
+TEST(JoinReverseTest, ReturnsCorrectValues) {
+  list<int> first{1, 2, 3};
+  vector<int> second{4, 5, 6};
+  auto iterator = Reverse(Join(first, second));
+
+  EXPECT_THAT(iterator, ElementsAre(6, 5, 4, 3, 2, 1));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre(6, 5, 4, 3, 2, 1));
+}
+
+TEST(JoinReverseTest, CanModifyValues) {
+  list<int> first{1};
+  vector<int> second{2};
+
+  auto iterator = Join(first, second);
+
+  int& first_value = *iterator.rbegin();
+  first_value = 123;
+
+  EXPECT_THAT(iterator, ElementsAre(1, 123));
+}
+
+TEST(JoinReverseTest, JoinOverNonConstCollections) {
+  list<int> first{};
+  vector<int> second{};
+  auto iterator = Join(first, second);
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(JoinReverseTest, JoinOverConstCollections) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  list<int> first{};
+  vector<int> second{};
+  auto iterator = Join(std::as_const(first), std::as_const(second));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int const&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(JoinReverseTest, JoinOverConstAndNonConstCollections) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  list<int> first{};
+  vector<int> second{};
+
+  auto iterator_1 = Join(std::as_const(first), second);
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator_1, int const&);
+  TEST_CONST_REVERSE_ITERATOR(iterator_1, int const&);
+
+  auto iterator_2 = Join(first, std::as_const(second));
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator_2, int const&);
+  TEST_CONST_REVERSE_ITERATOR(iterator_2, int const&);
+}
+
+TEST(JoinReverseTest, JoinRvalueCollections) {
+  list<int> first{};
+  vector<int> second{};
+  auto iterator = Join(std::move(first), std::move(second));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
 std::string ToString(const int& value) {
   return std::to_string(value);
 }
@@ -392,6 +621,59 @@ TEST(MapTest, MapRvalueCollection) {
 
   TEST_NON_CONST_ITERATOR(iterator, std::string);
   TEST_CONST_ITERATOR(iterator, std::string);
+  EXPECT_TYPE(std::string, decltype(iterator)::value_type);
+}
+
+TEST(MapReverseTest, ReturnsCorrectValues) {
+  vector<int> collection{1, 3, 5};
+  auto iterator = Reverse(Map(collection, ToString));
+
+  EXPECT_THAT(iterator, ElementsAre("5", "3", "1"));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre("5", "3", "1"));
+}
+
+TEST(MapReverseTest, CanModifyValues) {
+  // Note: For map, the non-const version means we send a non-const value into the mapping function
+  vector<int> collection{1, 3, 5};
+  auto iterator = Map(collection, [](int& value) -> int {
+    value += 100;
+    return 0;
+  });
+
+  for (const int& value : Reverse(iterator)) {
+    // simply iterating so the value is updated in the mapping function
+  }
+
+  EXPECT_THAT(collection, ElementsAre(101, 103, 105));
+}
+
+TEST(MapReverseTest, MapOverNonConstCollection) {
+  // For Map, both const and non-const iterators return the same type (i.e. the return value of the mapping-function)
+  vector<int> collection{1, 3, 5};
+  auto iterator = Map(collection, ToString);
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, std::string);
+  TEST_CONST_REVERSE_ITERATOR(iterator, std::string);
+  EXPECT_TYPE(std::string, decltype(iterator)::value_type);
+}
+
+TEST(MapReverseTest, MapOverConstCollection) {
+  // For Map, both const and non-const iterators return the same type (i.e. the return value of the mapping-function)
+  vector<int> collection{1, 3, 5};
+  auto iterator = Map(std::as_const(collection), ToString);
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, std::string);
+  TEST_CONST_REVERSE_ITERATOR(iterator, std::string);
+  EXPECT_TYPE(std::string, decltype(iterator)::value_type);
+}
+
+TEST(MapReverseTest, MapRvalueCollection) {
+  // For Map, both const and non-const iterators return the same type (i.e. the return value of the mapping-function)
+  vector<int> collection{1, 3, 5};
+  auto iterator = Map(std::move(collection), ToString);
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, std::string);
+  TEST_CONST_REVERSE_ITERATOR(iterator, std::string);
   EXPECT_TYPE(std::string, decltype(iterator)::value_type);
 }
 
@@ -471,6 +753,52 @@ TEST(FilterTest, FilterRvalueCollection) {
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
+TEST(FilterReverseTest, ReturnsCorrectValues) {
+  vector<int> collection{1, 2, 3, 4, 5};
+  auto iterator = Reverse(Filter(collection, is_odd));
+
+  EXPECT_THAT(iterator, ElementsAre(5, 3, 1));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre(5, 3, 1));
+}
+
+TEST(FilterReverseTest, CanModifyValues) {
+  vector<int> collection{1, 2, 3, 4, 5};
+  auto iterator = Filter(collection, is_odd);
+
+  int& first = *iterator.rbegin();
+  first = 123;
+
+  EXPECT_THAT(iterator, ElementsAre(1, 3, 123));
+}
+
+TEST(FilterReverseTest, FilterOverNonConstCollection) {
+  vector<int> collection{1, 2, 3, 4, 5};
+  auto iterator = Filter(collection, is_odd);
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(FilterReverseTest, FilterOverConstCollection) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  vector<int> collection{1, 2, 3, 4, 5};
+  auto iterator = Filter(std::as_const(collection), is_odd);
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int const&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(FilterReverseTest, FilterRvalueCollection) {
+  vector<int> collection{1, 2, 3, 4, 5};
+  auto iterator = Filter(std::move(collection), is_odd);
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
 std::list<std::unique_ptr<int>> ToUniquePtrList(int* values, int values_size) {
   std::list<std::unique_ptr<int>> result{};
   for (int i = 0; i < values_size; i++)
@@ -526,6 +854,57 @@ TEST(AsReferencesTest_unique_ptr, IterateRvalueCollection) {
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
   TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(AsReferencesReverseTest_unique_ptr, ReturnsCorrectValues) {
+  int values[] = {1, 3, 5};
+  auto collection{ToUniquePtrList(values, 3)};
+  auto iterator = Reverse(AsReferences(collection));
+
+  EXPECT_THAT(iterator, ElementsAre(5, 3, 1));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre(5, 3, 1));
+}
+
+TEST(AsReferencesReverseTest_unique_ptr, CanModifyValues) {
+  int values[] = {1, 3, 5};
+  auto collection{ToUniquePtrList(values, 3)};
+  auto iterator = AsReferences(collection);
+
+  int& first = *iterator.rbegin();
+  first = 123;
+
+  EXPECT_THAT(iterator, ElementsAre(1, 3, 123));
+}
+
+TEST(AsReferencesReverseTest_unique_ptr, IterateOverNonConstCollection) {
+  int values[] = {1, 3, 5};
+  auto collection{ToUniquePtrList(values, 3)};
+  auto iterator = AsReferences(collection);
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(AsReferencesReverseTest_unique_ptr, IterateOverConstCollection) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  int values[] = {1, 3, 5};
+  auto collection{ToUniquePtrList(values, 3)};
+  auto iterator = AsReferences(std::as_const(collection));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int const&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(AsReferencesReverseTest_unique_ptr, IterateRvalueCollection) {
+  int values[] = {1, 3, 5};
+  auto collection{ToUniquePtrList(values, 3)};
+  auto iterator = AsReferences(std::move(collection));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
@@ -587,6 +966,57 @@ TEST(AsReferencesTest_pointer, IterateRvalueCollection) {
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
+TEST(AsReferencesReverseTest_pointer, ReturnsCorrectValues) {
+  int values[] = {1, 3, 5};
+  auto collection{ToPointerList(values, 3)};
+  auto iterator = Reverse(AsReferences(collection));
+
+  EXPECT_THAT(iterator, ElementsAre(5, 3, 1));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre(5, 3, 1));
+}
+
+TEST(AsReferencesReverseTest_pointer, CanModifyValues) {
+  int values[] = {1, 3, 5};
+  auto collection{ToPointerList(values, 3)};
+  auto iterator = AsReferences(collection);
+
+  int& first = *iterator.rbegin();
+  first = 123;
+
+  EXPECT_THAT(iterator, ElementsAre(1, 3, 123));
+}
+
+TEST(AsReferencesReverseTest_pointer, IterateOverNonConstCollection) {
+  int values[] = {1, 3, 5};
+  auto collection{ToPointerList(values, 3)};
+  auto iterator = AsReferences(collection);
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(AsReferencesReverseTest_pointer, IterateOverConstCollection) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  int values[] = {1, 3, 5};
+  auto collection{ToPointerList(values, 3)};
+  auto iterator = AsReferences(std::as_const(collection));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int const&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(AsReferencesReverseTest_pointer, IterateRvalueCollection) {
+  int values[] = {1, 3, 5};
+  auto collection{ToPointerList(values, 3)};
+  auto iterator = AsReferences(std::move(collection));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
 TEST(ChainTest, ReturnsCorrectValues) {
   vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
   auto iterator = Chain(collection);
@@ -645,6 +1075,52 @@ TEST(ChainTest, SurvivesEmptyOuterCollection) {
 
   auto result = Chain(collection);
   EXPECT_THAT(result, ElementsAre());
+}
+
+TEST(ChainReverseTest, ReturnsCorrectValues) {
+  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  auto iterator = Reverse(Chain(collection));
+
+  EXPECT_THAT(iterator, ElementsAre(6, 5, 4, 3, 2, 1));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre(6, 5, 4, 3, 2, 1));
+}
+
+TEST(ChainReverseTest, CanModifyValues) {
+  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  auto iterator = Chain(collection);
+
+  int& first = *iterator.rbegin();
+  first = 123;
+
+  EXPECT_THAT(iterator, ElementsAre(1, 2, 3, 4, 5, 123));
+}
+
+TEST(ChainReverseTest, ChainOverNonConstCollection) {
+  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  auto iterator = Chain(collection);
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(ChainReverseTest, ChainOverConstCollection) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  auto iterator = Chain(std::as_const(collection));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int const&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(ChainReverseTest, ChainRvalueCollection) {
+  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  auto iterator = Chain(std::move(collection));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
 }  // namespace iterators

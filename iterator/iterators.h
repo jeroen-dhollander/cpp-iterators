@@ -262,12 +262,18 @@ class Enumerated {
   using _collection_value_type = typename _collection_type::value_type;
   using _collection_const_iterator = typename _collection_type::const_iterator;
   using _collection_iterator = typename _collection_type::iterator;
+  using _collection_const_reverse_iterator = typename _collection_type::const_reverse_iterator;
+  using _collection_reverse_iterator = typename _collection_type::reverse_iterator;
   using _Item = Item<_collection_value_type>;
   using _non_const_iterator = _Iterator<_collection_iterator, _Item>;
+  using _non_const_reverse_iterator = _Iterator<_collection_reverse_iterator, _Item>;
 
+  using value_type = _Item;
   using const_iterator = _Iterator<_collection_const_iterator, const _Item>;
   using iterator = typename std::conditional_t<details::is_const_type_v<T>, const_iterator, _non_const_iterator>;
-  using value_type = _Item;
+  using const_reverse_iterator = _Iterator<_collection_const_reverse_iterator, const _Item>;
+  using reverse_iterator =
+      typename std::conditional_t<details::is_const_type_v<T>, const_reverse_iterator, _non_const_reverse_iterator>;
 
   explicit Enumerated(T&& iterable) : iterable_(std::forward<T>(iterable)) {
   }
@@ -288,10 +294,27 @@ class Enumerated {
     return MakeIterator(std::end(iterable_));
   }
 
+  const_reverse_iterator rbegin() const {
+    return MakeConstReverseIterator(std::crbegin(iterable_));
+  }
+
+  const_reverse_iterator rend() const {
+    return MakeConstReverseIterator(std::crend(iterable_));
+  }
+
+  reverse_iterator rbegin() {
+    return MakeReverseIterator(std::rbegin(iterable_));
+  }
+
+  reverse_iterator rend() {
+    return MakeReverseIterator(std::rend(iterable_));
+  }
+
   template <typename __iterator, typename __return_type>
   class _Iterator {
    public:
-    _Iterator(__iterator begin, __iterator end, int position) : begin_(begin), end_(end), position_(position), item_{} {
+    _Iterator(__iterator begin, __iterator end, int position, int position_delta)
+        : begin_(begin), end_(end), position_(position), position_delta_(position_delta), item_{} {
       SetItem();
     }
 
@@ -309,7 +332,7 @@ class Enumerated {
 
     void operator++() {
       ++begin_;
-      ++position_;
+      position_ += position_delta_;
       SetItem();
     }
 
@@ -333,16 +356,32 @@ class Enumerated {
     __iterator begin_;
     __iterator end_;
     int position_;
+    int position_delta_;
     _Item item_;
   };
 
  private:
+  constexpr static int kIncrement = 1;
+  constexpr static int kDecrement = -1;
+
+  std::size_t size() const {
+    return iterable_.size();
+  }
+
   const_iterator MakeConstIterator(_collection_const_iterator begin_iterator) const {
-    return const_iterator(begin_iterator, std::cend(iterable_), 0);
+    return const_iterator(begin_iterator, std::cend(iterable_), 0, kIncrement);
   }
 
   iterator MakeIterator(_collection_iterator begin_iterator) {
-    return iterator(begin_iterator, std::end(iterable_), 0);
+    return iterator(begin_iterator, std::end(iterable_), 0, kIncrement);
+  }
+
+  const_reverse_iterator MakeConstReverseIterator(_collection_const_reverse_iterator begin_iterator) const {
+    return const_reverse_iterator(begin_iterator, std::rend(iterable_), size() - 1, kDecrement);
+  }
+
+  reverse_iterator MakeReverseIterator(_collection_reverse_iterator begin_iterator) {
+    return reverse_iterator(begin_iterator, std::rend(iterable_), size() - 1, kDecrement);
   }
 
   T iterable_;
@@ -361,6 +400,8 @@ class Iterated {
   using value_type = typename _iterable::value_type;
   using const_iterator = typename _iterable::const_iterator;
   using iterator = details::non_const_iterator_t<T>;
+  using const_reverse_iterator = typename _iterable::const_reverse_iterator;
+  using reverse_iterator = details::non_const_reverse_iterator_t<T>;
 
   explicit Iterated(T&& iterable) : iterable_(std::forward<T>(iterable)) {
   }
@@ -381,6 +422,22 @@ class Iterated {
     return std::cend(iterable_);
   }
 
+  reverse_iterator rbegin() {
+    return std::rbegin(iterable_);
+  }
+
+  reverse_iterator rend() {
+    return std::rend(iterable_);
+  }
+
+  const_reverse_iterator rbegin() const {
+    return std::crbegin(iterable_);
+  }
+
+  const_reverse_iterator rend() const {
+    return std::crend(iterable_);
+  }
+
  private:
   T iterable_;
 };
@@ -395,42 +452,82 @@ class Chained {
  public:
   template <typename, typename>
   class _Iterator;
+
   using _outer_collection = details::remove_cvref_t<T>;
   using _outer_const_iterator = typename _outer_collection::const_iterator;
-  using _outer_iterator = typename _outer_collection::iterator;
+  using _outer_non_const_iterator = typename _outer_collection::iterator;
+  using _outer_iterator =
+      std::conditional_t<details::is_const_type_v<T>, _outer_const_iterator, _outer_non_const_iterator>;
+  using _outer_const_reverse_iterator = typename _outer_collection::const_reverse_iterator;
+  using _outer_non_const_reverse_iterator = typename _outer_collection::reverse_iterator;
+  using _outer_reverse_iterator =
+      std::conditional_t<details::is_const_type_v<T>, _outer_const_reverse_iterator, _outer_non_const_reverse_iterator>;
+
   using _inner_collection = details::remove_cvref_t<typename _outer_collection::value_type>;
   using _inner_const_iterator = typename _inner_collection::const_iterator;
-  using _inner_iterator = typename _inner_collection::iterator;
-  using _non_const_iterator = _Iterator<_outer_iterator, _inner_iterator>;
+  using _inner_non_const_iterator = typename _inner_collection::iterator;
+  using _inner_iterator =
+      std::conditional_t<details::is_const_type_v<T>, _inner_const_iterator, _inner_non_const_iterator>;
+  using _inner_const_reverse_iterator = typename _inner_collection::const_reverse_iterator;
+  using _inner_non_const_reverse_iterator = typename _inner_collection::reverse_iterator;
+  using _inner_reverse_iterator =
+      std::conditional_t<details::is_const_type_v<T>, _inner_const_reverse_iterator, _inner_non_const_reverse_iterator>;
 
   using value_type = typename _inner_collection::value_type;
   using const_iterator = _Iterator<_outer_const_iterator, _inner_const_iterator>;
-  using iterator = typename std::conditional_t<details::is_const_type_v<T>, const_iterator, _non_const_iterator>;
+  using iterator = _Iterator<_outer_iterator, _inner_iterator>;
+  using const_reverse_iterator = _Iterator<_outer_const_reverse_iterator, _inner_const_reverse_iterator>;
+  using reverse_iterator = _Iterator<_outer_reverse_iterator, _inner_reverse_iterator>;
 
   Chained(T&& data) : data_(std::forward<T>(data)) {
   }
 
   iterator begin() {
-    return iterator{std::begin(data_), std::end(data_)};
+    return iterator{std::begin(data_), std::end(data_), GetBegin, GetEnd};
   }
 
   iterator end() {
-    return iterator{std::end(data_), std::end(data_)};
+    return iterator{std::end(data_), std::end(data_), GetBegin, GetEnd};
   }
 
   const_iterator begin() const {
-    return const_iterator{std::cbegin(data_), std::cend(data_)};
+    return const_iterator{std::cbegin(data_), std::cend(data_), GetConstBegin, GetConstEnd};
   }
 
   const_iterator end() const {
-    return const_iterator{std::cend(data_), std::cend(data_)};
+    return const_iterator{std::cend(data_), std::cend(data_), GetConstBegin, GetConstEnd};
+  }
+
+  reverse_iterator rbegin() {
+    return reverse_iterator{std::rbegin(data_), std::rend(data_), GetReverseBegin, GetReverseEnd};
+  }
+
+  reverse_iterator rend() {
+    return reverse_iterator{std::rend(data_), std::rend(data_), GetReverseBegin, GetReverseEnd};
+  }
+
+  const_reverse_iterator rbegin() const {
+    return const_reverse_iterator{std::crbegin(data_), std::crend(data_), GetConstReverseBegin, GetConstReverseEnd};
+  }
+
+  const_reverse_iterator rend() const {
+    return const_reverse_iterator{std::crend(data_), std::crend(data_), GetConstReverseBegin, GetConstReverseEnd};
   }
 
   template <typename __outer_iterator, typename __inner_iterator>
   class _Iterator {
    public:
-    _Iterator(__outer_iterator begin, __outer_iterator end)
-        : outer_begin_(begin), outer_end_(end), inner_begin_(), inner_end_() {
+    using _inner_iterator_collection = typename __outer_iterator::value_type;
+    using GetIteratorFunction = __inner_iterator (*)(_inner_iterator_collection&);
+
+    _Iterator(__outer_iterator begin, __outer_iterator end, GetIteratorFunction inner_begin_getter,
+              GetIteratorFunction inner_end_getter)
+        : outer_begin_(begin),
+          outer_end_(end),
+          inner_begin_(),
+          inner_end_(),
+          get_inner_begin_(inner_begin_getter),
+          get_inner_end_(inner_end_getter) {
       InitializeInnerCollection();
       SkipEmptyInnerCollections();
     }
@@ -463,8 +560,8 @@ class Chained {
     // Initialized 'begin' and 'end' for the inner collection
     void InitializeInnerCollection() {
       if (!IsAtEnd()) {
-        inner_begin_ = std::begin(*outer_begin_);
-        inner_end_ = std::end(*outer_begin_);
+        inner_begin_ = get_inner_begin_(const_cast<_inner_iterator_collection&>(*outer_begin_));
+        inner_end_ = get_inner_end_(const_cast<_inner_iterator_collection&>(*outer_begin_));
       }
     }
 
@@ -485,9 +582,43 @@ class Chained {
     __outer_iterator outer_end_;
     __inner_iterator inner_begin_;
     __inner_iterator inner_end_;
+    GetIteratorFunction get_inner_begin_;
+    GetIteratorFunction get_inner_end_;
   };
 
  private:
+  static _inner_iterator GetBegin(_inner_collection& collection) {
+    return std::begin(collection);
+  }
+
+  static _inner_iterator GetEnd(_inner_collection& collection) {
+    return std::end(collection);
+  }
+
+  static _inner_const_iterator GetConstBegin(_inner_collection& collection) {
+    return std::cbegin(collection);
+  }
+
+  static _inner_const_iterator GetConstEnd(_inner_collection& collection) {
+    return std::cend(collection);
+  }
+
+  static _inner_reverse_iterator GetReverseBegin(_inner_collection& collection) {
+    return std::rbegin(collection);
+  }
+
+  static _inner_reverse_iterator GetReverseEnd(_inner_collection& collection) {
+    return std::rend(collection);
+  }
+
+  static _inner_const_reverse_iterator GetConstReverseBegin(_inner_collection& collection) {
+    return std::crbegin(collection);
+  }
+
+  static _inner_const_reverse_iterator GetConstReverseEnd(_inner_collection& collection) {
+    return std::crend(collection);
+  }
+
   T data_;
 };
 
@@ -506,11 +637,17 @@ class Referenced {
   using _collection_value_type = std::remove_pointer_t<typename _collection_type::value_type>;
   using _collection_const_iterator = typename _collection_type::const_iterator;
   using _collection_iterator = typename _collection_type::iterator;
+  using _collection_const_reverse_iterator = typename _collection_type::const_reverse_iterator;
+  using _collection_reverse_iterator = typename _collection_type::reverse_iterator;
 
   using value_type = _collection_value_type;
   using const_iterator = _Iterator<_collection_const_iterator, const value_type>;
   using _non_const_iterator = _Iterator<_collection_iterator, value_type>;
   using iterator = typename std::conditional_t<details::is_const_type_v<T>, const_iterator, _non_const_iterator>;
+  using const_reverse_iterator = _Iterator<_collection_const_reverse_iterator, const value_type>;
+  using _non_const_reverse_iterator = _Iterator<_collection_reverse_iterator, value_type>;
+  using reverse_iterator =
+      typename std::conditional_t<details::is_const_type_v<T>, const_reverse_iterator, _non_const_reverse_iterator>;
 
   explicit Referenced(T&& iterable) : iterable_(std::forward<T>(iterable)) {
   }
@@ -529,6 +666,22 @@ class Referenced {
 
   const_iterator end() const {
     return const_iterator{std::cend(iterable_), std::cend(iterable_)};
+  }
+
+  reverse_iterator rbegin() {
+    return reverse_iterator{std::rbegin(iterable_), std::rend(iterable_)};
+  }
+
+  reverse_iterator rend() {
+    return reverse_iterator{std::rend(iterable_), std::rend(iterable_)};
+  }
+
+  const_reverse_iterator rbegin() const {
+    return const_reverse_iterator{std::crbegin(iterable_), std::crend(iterable_)};
+  }
+
+  const_reverse_iterator rend() const {
+    return const_reverse_iterator{std::crend(iterable_), std::crend(iterable_)};
   }
 
   template <typename __iterator, typename __return_value>
@@ -576,11 +729,17 @@ class ReferencedUnique {
   using _collection_value_type = typename _collection_type::value_type;
   using _collection_const_iterator = typename _collection_type::const_iterator;
   using _collection_iterator = typename _collection_type::iterator;
+  using _collection_const_reverse_iterator = typename _collection_type::const_reverse_iterator;
+  using _collection_reverse_iterator = typename _collection_type::reverse_iterator;
 
   using value_type = typename _collection_value_type::element_type;
   using _non_const_iterator = _Iterator<_collection_iterator, value_type>;
   using const_iterator = _Iterator<_collection_const_iterator, const value_type>;
   using iterator = typename std::conditional_t<details::is_const_type_v<T>, const_iterator, _non_const_iterator>;
+  using _non_const_reverse_iterator = _Iterator<_collection_reverse_iterator, value_type>;
+  using const_reverse_iterator = _Iterator<_collection_const_reverse_iterator, const value_type>;
+  using reverse_iterator =
+      typename std::conditional_t<details::is_const_type_v<T>, const_reverse_iterator, _non_const_reverse_iterator>;
 
   explicit ReferencedUnique(T&& iterable) : iterable_(std::forward<T>(iterable)) {
   }
@@ -599,6 +758,22 @@ class ReferencedUnique {
 
   const_iterator end() const {
     return const_iterator{std::cend(iterable_), std::cend(iterable_)};
+  }
+
+  reverse_iterator rbegin() {
+    return reverse_iterator{std::rbegin(iterable_), std::rend(iterable_)};
+  }
+
+  reverse_iterator rend() {
+    return reverse_iterator{std::rend(iterable_), std::rend(iterable_)};
+  }
+
+  const_reverse_iterator rbegin() const {
+    return const_reverse_iterator{std::crbegin(iterable_), std::crend(iterable_)};
+  }
+
+  const_reverse_iterator rend() const {
+    return const_reverse_iterator{std::crend(iterable_), std::crend(iterable_)};
   }
 
   template <typename __iterator, typename __return_value>
@@ -646,6 +821,8 @@ class Reversed {
   using value_type = typename _iterable::value_type;
   using const_iterator = typename _iterable::const_reverse_iterator;
   using iterator = details::non_const_reverse_iterator_t<T>;
+  using const_reverse_iterator = typename _iterable::const_iterator;
+  using reverse_iterator = details::non_const_iterator_t<T>;
 
   explicit Reversed(T&& iterable) : iterable_(std::forward<T>(iterable)) {
   }
@@ -666,6 +843,22 @@ class Reversed {
     return std::crend(iterable_);
   }
 
+  reverse_iterator rbegin() {
+    return std::begin(iterable_);
+  }
+
+  reverse_iterator rend() {
+    return std::end(iterable_);
+  }
+
+  const_reverse_iterator rbegin() const {
+    return std::cbegin(iterable_);
+  }
+
+  const_reverse_iterator rend() const {
+    return std::cend(iterable_);
+  }
+
  private:
   T iterable_;
 };
@@ -681,10 +874,14 @@ class Joined {
   using _iterable_1 = typename std::remove_reference_t<T1>;
   using _const_iterator_1 = typename _iterable_1::const_iterator;
   using _iterator_1 = typename _iterable_1::iterator;
+  using _const_reverse_iterator_1 = typename _iterable_1::const_reverse_iterator;
+  using _reverse_iterator_1 = typename _iterable_1::reverse_iterator;
 
   using _iterable_2 = typename std::remove_reference_t<T2>;
   using _const_iterator_2 = typename _iterable_2::const_iterator;
   using _iterator_2 = typename _iterable_2::iterator;
+  using _const_reverse_iterator_2 = typename _iterable_2::const_reverse_iterator;
+  using _reverse_iterator_2 = typename _iterable_2::reverse_iterator;
 
   static_assert((std::is_same<typename _iterable_1::value_type, typename _iterable_2::value_type>::value),
                 "value_type must be same type for both collections");
@@ -692,28 +889,50 @@ class Joined {
   template <typename, typename>
   class _Iterator;
   using _non_const_iterator = _Iterator<typename _iterable_1::iterator, typename _iterable_2::iterator>;
+  using _non_const_reverse_iterator =
+      _Iterator<typename _iterable_2::reverse_iterator, typename _iterable_1::reverse_iterator>;
 
+  using value_type = typename _iterable_1::value_type;
   using const_iterator = _Iterator<typename _iterable_1::const_iterator, typename _iterable_2::const_iterator>;
   using iterator = typename std::conditional_t<details::is_any_const_v<T1, T2>, const_iterator, _non_const_iterator>;
-  using value_type = typename _iterable_1::value_type;
+  using const_reverse_iterator =
+      _Iterator<typename _iterable_2::const_reverse_iterator, typename _iterable_1::const_reverse_iterator>;
+  using reverse_iterator =
+      typename std::conditional_t<details::is_any_const_v<T1, T2>, const_reverse_iterator, _non_const_reverse_iterator>;
 
   Joined(T1&& data_1, T2&& data_2) : first_(std::forward<T1>(data_1)), second_(std::forward<T2>(data_2)) {
   }
 
   iterator begin() {
-    return MakeIterator(std::begin(first_), std::begin(second_));
+    return iterator{std::begin(first_), std::end(first_), std::begin(second_), std::end(second_)};
   }
 
   iterator end() {
-    return MakeIterator(std::end(first_), std::end(second_));
+    return iterator{std::end(first_), std::end(first_), std::end(second_), std::end(second_)};
   }
 
   const_iterator begin() const {
-    return MakeConstIterator(std::cbegin(first_), std::cbegin(second_));
+    return const_iterator{std::cbegin(first_), std::cend(first_), std::cbegin(second_), std::cend(second_)};
   }
 
   const_iterator end() const {
-    return MakeConstIterator(std::cend(first_), std::cend(second_));
+    return const_iterator{std::cend(first_), std::cend(first_), std::cend(second_), std::cend(second_)};
+  }
+
+  reverse_iterator rbegin() {
+    return reverse_iterator{std::rbegin(second_), std::rend(second_), std::rbegin(first_), std::rend(first_)};
+  }
+
+  reverse_iterator rend() {
+    return reverse_iterator{std::rend(second_), std::rend(second_), std::rend(first_), std::rend(first_)};
+  }
+
+  const_reverse_iterator rbegin() const {
+    return const_reverse_iterator{std::crbegin(second_), std::crend(second_), std::crbegin(first_), std::crend(first_)};
+  }
+
+  const_reverse_iterator rend() const {
+    return const_reverse_iterator{std::crend(second_), std::crend(second_), std::crend(first_), std::crend(first_)};
   }
 
   template <typename _FirstIterator, typename _SecondIterator>
@@ -750,14 +969,6 @@ class Joined {
   };
 
  private:
-  const_iterator MakeConstIterator(_const_iterator_1 first_begin, _const_iterator_2 second_begin) const {
-    return const_iterator(first_begin, std::cend(first_), second_begin, std::cend(second_));
-  }
-
-  iterator MakeIterator(_iterator_1 first_begin, _iterator_2 second_begin) {
-    return iterator(first_begin, std::end(first_), second_begin, std::end(second_));
-  }
-
   T1 first_;
   T2 second_;
 };
@@ -776,30 +987,53 @@ class Mapped {
   using _iterable_value_type = typename _iterable::value_type;
   using _iterable_const_iterator = typename _iterable::const_iterator;
   using _iterable_iterator = typename _iterable::iterator;
+  using _iterable_const_reverse_iterator = typename _iterable::const_reverse_iterator;
+  using _iterable_reverse_iterator = typename _iterable::reverse_iterator;
   using _non_const_iterator = _Iterator<_iterable_iterator, typename std::remove_reference_t<Function>>;
+  using _non_const_reverse_iterator = _Iterator<_iterable_reverse_iterator, typename std::remove_reference_t<Function>>;
 
+  using value_type = typename std::result_of<Function(_iterable_value_type&)>::type;
   using const_iterator = _Iterator<_iterable_const_iterator, typename std::remove_reference_t<Function>>;
   using iterator = typename std::conditional_t<details::is_const_type_v<T>, const_iterator, _non_const_iterator>;
-  using value_type = typename std::result_of<Function(_iterable_value_type&)>::type;
+  using const_reverse_iterator =
+      _Iterator<_iterable_const_reverse_iterator, typename std::remove_reference_t<Function>>;
+  using reverse_iterator =
+      typename std::conditional_t<details::is_const_type_v<T>, const_reverse_iterator, _non_const_reverse_iterator>;
 
   Mapped(T&& iterable, Function&& mapping_function)
       : iterable_(std::forward<T>(iterable)), mapping_function_(std::forward<Function>(mapping_function)) {
   }
 
   iterator begin() {
-    return MakeIterator(std::begin(iterable_));
+    return iterator{std::begin(iterable_), std::end(iterable_), mapping_function_};
   }
 
   iterator end() {
-    return MakeIterator(std::end(iterable_));
+    return iterator{std::end(iterable_), std::end(iterable_), mapping_function_};
   }
 
   const_iterator begin() const {
-    return MakeConstIterator(std::cbegin(iterable_));
+    return const_iterator{std::cbegin(iterable_), std::cend(iterable_), mapping_function_};
   }
 
   const_iterator end() const {
-    return MakeConstIterator(std::cend(iterable_));
+    return const_iterator{std::cend(iterable_), std::cend(iterable_), mapping_function_};
+  }
+
+  reverse_iterator rbegin() {
+    return reverse_iterator{std::rbegin(iterable_), std::rend(iterable_), mapping_function_};
+  }
+
+  reverse_iterator rend() {
+    return reverse_iterator{std::rend(iterable_), std::rend(iterable_), mapping_function_};
+  }
+
+  const_reverse_iterator rbegin() const {
+    return const_reverse_iterator{std::crbegin(iterable_), std::crend(iterable_), mapping_function_};
+  }
+
+  const_reverse_iterator rend() const {
+    return const_reverse_iterator{std::crend(iterable_), std::crend(iterable_), mapping_function_};
   }
 
   template <typename __iterable, typename _function>
@@ -831,14 +1065,6 @@ class Mapped {
   };
 
  private:
-  const_iterator MakeConstIterator(_iterable_const_iterator begin_iterator) const {
-    return const_iterator(begin_iterator, std::cend(iterable_), mapping_function_);
-  }
-
-  iterator MakeIterator(_iterable_iterator begin_iterator) {
-    return iterator(begin_iterator, std::end(iterable_), mapping_function_);
-  }
-
   T iterable_;
   Function mapping_function_;
 };
@@ -866,30 +1092,54 @@ class Filtered {
   using _iterable = typename std::remove_reference_t<T>;
   using _iterable_const_iterator = typename _iterable::const_iterator;
   using _iterable_iterator = typename _iterable::iterator;
+  using _iterable_const_reverse_iterator = typename _iterable::const_reverse_iterator;
+  using _iterable_reverse_iterator = typename _iterable::reverse_iterator;
   using _non_const_iterator = _Iterator<_iterable_iterator, typename std::remove_reference_t<FilterFunction>>;
+  using _non_const_reverse_iterator =
+      _Iterator<_iterable_reverse_iterator, typename std::remove_reference_t<FilterFunction>>;
 
   using value_type = typename _iterable::value_type;
   using const_iterator = _Iterator<_iterable_const_iterator, typename std::remove_reference_t<FilterFunction>>;
   using iterator = typename std::conditional_t<details::is_const_type_v<T>, const_iterator, _non_const_iterator>;
+  using const_reverse_iterator =
+      _Iterator<_iterable_const_reverse_iterator, typename std::remove_reference_t<FilterFunction>>;
+  using reverse_iterator =
+      typename std::conditional_t<details::is_const_type_v<T>, const_reverse_iterator, _non_const_reverse_iterator>;
 
   Filtered(T&& iterable, FilterFunction&& filter)
       : iterable_(std::forward<T>(iterable)), filter_(std::forward<FilterFunction>(filter)) {
   }
 
   iterator begin() {
-    return MakeIterator(std::begin(iterable_));
+    return iterator{std::begin(iterable_), std::end(iterable_), filter_};
   }
 
   iterator end() {
-    return MakeIterator(std::end(iterable_));
+    return iterator{std::end(iterable_), std::end(iterable_), filter_};
   }
 
   const_iterator begin() const {
-    return MakeConstIterator(std::begin(iterable_));
+    return const_iterator{std::cbegin(iterable_), std::cend(iterable_), filter_};
   }
 
   const_iterator end() const {
-    return MakeConstIterator(std::end(iterable_));
+    return const_iterator{std::cend(iterable_), std::cend(iterable_), filter_};
+  }
+
+  reverse_iterator rbegin() {
+    return reverse_iterator{std::rbegin(iterable_), std::rend(iterable_), filter_};
+  }
+
+  reverse_iterator rend() {
+    return reverse_iterator{std::rend(iterable_), std::rend(iterable_), filter_};
+  }
+
+  const_reverse_iterator rbegin() const {
+    return const_reverse_iterator{std::crbegin(iterable_), std::crend(iterable_), filter_};
+  }
+
+  const_reverse_iterator rend() const {
+    return const_reverse_iterator{std::crend(iterable_), std::crend(iterable_), filter_};
   }
 
   template <typename __iterable, typename _function>
@@ -935,14 +1185,6 @@ class Filtered {
   };
 
  private:
-  const_iterator MakeConstIterator(_iterable_const_iterator begin_iterator) const {
-    return const_iterator(begin_iterator, std::cend(iterable_), filter_);
-  }
-
-  iterator MakeIterator(_iterable_iterator begin_iterator) {
-    return iterator(begin_iterator, std::end(iterable_), filter_);
-  }
-
   T iterable_;
   FilterFunction filter_;
 };
