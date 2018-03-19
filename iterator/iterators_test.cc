@@ -565,49 +565,63 @@ TEST(AsReferencesTest_unique_ptr, IterateRvalueCollection) {
   TEST_CONST_ITERATOR(iterator, int const&);
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
-#if 0
-#endif
 
-// DO_NOT_PUSH here
-
-TEST(AsReferences_unique_ptr, can_const_iterate_const_pointer_collection) {
-  int values[] = {1, 3, 5};
-  auto input{ToUniquePtrList(values, 3)};
-
-  auto result = AsReferences(std::as_const(input));
-  EXPECT_THAT(std::as_const(result), ElementsAreArray(values));
+std::list<int*> ToPointerList(int* values, int values_size) {
+  std::list<int*> result{};
+  for (int i = 0; i < values_size; i++)
+    result.push_back(&values[i]);
+  return result;
 }
 
-TEST(AsReferences_unique_ptr, can_const_iterate_non_const_pointer_collection) {
+TEST(AsReferencesTest_pointer, ReturnsCorrectValues) {
   int values[] = {1, 3, 5};
-  auto input{ToUniquePtrList(values, 3)};
+  auto collection{ToPointerList(values, 3)};
+  auto iterator = AsReferences(collection);
 
-  auto result = AsReferences(input);
-  EXPECT_THAT(std::as_const(result), ElementsAreArray(values));
+  EXPECT_THAT(iterator, ElementsAre(1, 3, 5));
+  EXPECT_THAT(std::as_const(iterator), ElementsAre(1, 3, 5));
 }
 
-TEST(AsReferences_unique_ptr, can_non_const_iterate_non_const_pointer_collection) {
+TEST(AsReferencesTest_pointer, CanModifyValues) {
   int values[] = {1, 3, 5};
-  auto input{ToUniquePtrList(values, 3)};
+  auto collection{ToPointerList(values, 3)};
+  auto iterator = AsReferences(collection);
 
-  auto result = AsReferences(std::move(input));
-  EXPECT_THAT(IncreaseAll(&result), ElementsAre(2, 4, 6));
+  int& first = *iterator.begin();
+  first = 123;
+
+  EXPECT_THAT(iterator, ElementsAre(123, 3, 5));
 }
 
-TEST(AsReferences_unique_ptr, can_const_iterate_rvalue_pointer_collection) {
+TEST(AsReferencesTest_pointer, IterateOverNonConstCollection) {
   int values[] = {1, 3, 5};
-  auto input{ToUniquePtrList(values, 3)};
+  auto collection{ToPointerList(values, 3)};
+  auto iterator = AsReferences(collection);
 
-  auto result = AsReferences(std::move(input));
-  EXPECT_THAT(std::as_const(result), ElementsAreArray(values));
+  TEST_NON_CONST_ITERATOR(iterator, int&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
-TEST(AsReferences_unique_ptr, can_non_const_iterate_rvalue_pointer_collection) {
+TEST(AsReferencesTest_pointer, IterateOverConstCollection) {
+  // Note: In this case, even iterating non-const uses a const_iterator
   int values[] = {1, 3, 5};
-  auto input{ToUniquePtrList(values, 3)};
+  auto collection{ToPointerList(values, 3)};
+  auto iterator = AsReferences(std::as_const(collection));
 
-  auto result = AsReferences(std::move(input));
-  EXPECT_THAT(IncreaseAll(&result), ElementsAre(2, 4, 6));
+  TEST_NON_CONST_ITERATOR(iterator, int const&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(AsReferencesTest_pointer, IterateRvalueCollection) {
+  int values[] = {1, 3, 5};
+  auto collection{ToPointerList(values, 3)};
+  auto iterator = AsReferences(std::move(collection));
+
+  TEST_NON_CONST_ITERATOR(iterator, int&);
+  TEST_CONST_ITERATOR(iterator, int const&);
+  EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
 TEST(ChainTest, can_iterate_non_empty_collections) {
