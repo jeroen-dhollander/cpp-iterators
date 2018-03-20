@@ -314,35 +314,35 @@ class Enumerated {
   }
 
   const_iterator begin() const {
-    return MakeConstIterator(details::cbegin(iterable_));
+    return const_iterator{details::cbegin(iterable_), details::cend(iterable_), 0, kIncrement};
   }
 
   const_iterator end() const {
-    return MakeConstIterator(details::cend(iterable_));
+    return const_iterator{details::cend(iterable_), details::cend(iterable_), 0, kIncrement};
   }
 
   iterator begin() {
-    return MakeIterator(std::begin(iterable_));
+    return iterator{std::begin(iterable_), std::end(iterable_), 0, kIncrement};
   }
 
   iterator end() {
-    return MakeIterator(std::end(iterable_));
+    return iterator{std::end(iterable_), std::end(iterable_), 0, kIncrement};
   }
 
   const_reverse_iterator rbegin() const {
-    return MakeConstReverseIterator(details::crbegin(iterable_));
+    return const_reverse_iterator{details::crbegin(iterable_), details::crend(iterable_), MaxPosition(), kDecrement};
   }
 
   const_reverse_iterator rend() const {
-    return MakeConstReverseIterator(details::crend(iterable_));
+    return const_reverse_iterator{details::crend(iterable_), details::crend(iterable_), MaxPosition(), kDecrement};
   }
 
   reverse_iterator rbegin() {
-    return MakeReverseIterator(details::rbegin(iterable_));
+    return reverse_iterator{details::rbegin(iterable_), details::rend(iterable_), MaxPosition(), kDecrement};
   }
 
   reverse_iterator rend() {
-    return MakeReverseIterator(details::rend(iterable_));
+    return reverse_iterator{details::rend(iterable_), details::rend(iterable_), MaxPosition(), kDecrement};
   }
 
   template <typename __iterator, typename __return_type>
@@ -399,24 +399,12 @@ class Enumerated {
   constexpr static int kIncrement = 1;
   constexpr static int kDecrement = -1;
 
+  int MaxPosition() const {
+    return static_cast<int>(size()) - 1;
+  }
+
   std::size_t size() const {
     return iterable_.size();
-  }
-
-  const_iterator MakeConstIterator(_collection_const_iterator begin_iterator) const {
-    return const_iterator(begin_iterator, details::cend(iterable_), 0, kIncrement);
-  }
-
-  iterator MakeIterator(_collection_iterator begin_iterator) {
-    return iterator(begin_iterator, std::end(iterable_), 0, kIncrement);
-  }
-
-  const_reverse_iterator MakeConstReverseIterator(_collection_const_reverse_iterator begin_iterator) const {
-    return const_reverse_iterator(begin_iterator, details::rend(iterable_), size() - 1, kDecrement);
-  }
-
-  reverse_iterator MakeReverseIterator(_collection_reverse_iterator begin_iterator) {
-    return reverse_iterator(begin_iterator, details::rend(iterable_), size() - 1, kDecrement);
   }
 
   T iterable_;
