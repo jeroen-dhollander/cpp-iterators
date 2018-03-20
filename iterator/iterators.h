@@ -235,6 +235,14 @@ template<typename T> struct is_const_type<const T*&&> : std::true_type {};
 template <typename T1, typename T2>
 using is_any_const = disjunction<is_const_type<T1>, is_const_type<T2>>;
 
+// The collection type is considered const if:
+//   - it is 'const T'
+//   - its non-const iterator returns a const value
+template <typename T>
+using is_const_collection =
+    disjunction<is_const_type<T>,
+                is_const_type<decltype(std::declval<typename remove_cvref_t<T>::iterator>().operator*())>>;
+
 // Returns T::iterator if T is non_const,
 // returns T::const_iterator if it is const.
 // e.g. non_const_iterator_t<vector<int>> --> vector<int>::iterator
@@ -297,10 +305,10 @@ class Enumerated {
   using value_type = _Item;
   using const_iterator = _Iterator<_collection_const_iterator, const _Item>;
   using iterator =
-      typename details::conditional_t<details::is_const_type<T>::value, const_iterator, _non_const_iterator>;
+      typename details::conditional_t<details::is_const_collection<T>::value, const_iterator, _non_const_iterator>;
   using const_reverse_iterator = _Iterator<_collection_const_reverse_iterator, const _Item>;
-  using reverse_iterator = typename details::conditional_t<details::is_const_type<T>::value, const_reverse_iterator,
-                                                           _non_const_reverse_iterator>;
+  using reverse_iterator = typename details::conditional_t<details::is_const_collection<T>::value,
+                                                           const_reverse_iterator, _non_const_reverse_iterator>;
 
   explicit Enumerated(T&& iterable) : iterable_(std::forward<T>(iterable)) {
   }

@@ -196,6 +196,18 @@ TEST(EnumerateTest, EnumerateRvalueCollection) {
   EXPECT_TYPE(Item<char>, decltype(iterator)::value_type);
 }
 
+TEST(EnumerateTest, OverRvalueConstCollection) {
+  // Note: Because we const-cast inside 'enumerate', we need to ensure we correctly handle
+  // collections that return const-values even in their non-const iterators
+  vector<char> collection{'A', 'B', 'C'};
+  auto nested_iterator = Iterate(std::as_const(collection));
+  auto iterator = Enumerate(std::move(nested_iterator));
+
+  TEST_NON_CONST_ITERATOR(iterator, Item<char> const&);
+  TEST_CONST_ITERATOR(iterator, Item<char> const&);
+  EXPECT_TYPE(Item<char>, decltype(iterator)::value_type);
+}
+
 TEST(EnumerateReverseTest, ReturnsCorrectValues) {
   vector<char> collection{'A', 'B', 'C'};
   auto iterator = Reverse(Enumerate(collection));
@@ -238,6 +250,18 @@ TEST(EnumerateReverseTest, EnumerateRvalueCollection) {
   auto iterator = Enumerate(std::move(collection));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, Item<char>&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, Item<char> const&);
+  EXPECT_TYPE(Item<char>, decltype(iterator)::value_type);
+}
+
+TEST(EnumerateReverseTest, OverRvalueConstCollection) {
+  // Note: Because we const-cast inside 'enumerate', we need to ensure we correctly handle
+  // collections that return const-values even in their non-const iterators
+  vector<char> collection{'A', 'B', 'C'};
+  auto nested_iterator = Iterate(std::as_const(collection));
+  auto iterator = Enumerate(std::move(nested_iterator));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, Item<char> const&);
   TEST_CONST_REVERSE_ITERATOR(iterator, Item<char> const&);
   EXPECT_TYPE(Item<char>, decltype(iterator)::value_type);
 }
