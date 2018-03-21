@@ -1,5 +1,6 @@
 
 #include "iterators.h"
+#include <forward_list>
 #include <list>
 #include <memory>
 #include <vector>
@@ -7,16 +8,26 @@
 #include "gtest/gtest.h"
 
 namespace iterators {
+using std::forward_list;
 using std::list;
 using std::string;
 using std::vector;
 using testing::ElementsAre;
 using testing::ElementsAreArray;
 
+// An iterator that supports both iterating forward and reverse
+template <typename T> using BiDirectionalCollection = std::vector<T>;
+template <typename T> using OtherBiDirectionalCollection = std::list<T>;
+// An iterator that only supports iterating forward, not reverse
+template <typename T> using ForwardOnlyCollection = std::forward_list<T>;
+template <typename T> class OtherForwardOnlyCollection : public ForwardIterated<std::vector<T>> {
+ public:
+  OtherForwardOnlyCollection(std::initializer_list<T> values) : ForwardIterated(std::vector<T>(values)){};
+};
+
 // Prints a human-readable string of the given type, e.g. 'int const *'.
 // https://stackoverflow.com/a/20170989/3490116
-template <class T>
-std::string type_name() {
+template <class T> std::string type_name() {
   typedef typename std::remove_reference<T>::type TR;
   std::unique_ptr<char, void (*)(void*)> own(
 #ifndef _MSC_VER
@@ -126,6 +137,18 @@ TEST(TypeNameTest, SanityCheck) {
   EXPECT_EQ("int *&&", type_name<int*&&>());
 }
 
+TEST(IsBidirectionalCollectionTest, SanityCheck) {
+  // Test that our 'is_bidirectional_collection' works as expected
+#define IS_BIDIRECTIONAL_COLLECTION(_type) details::is_bidirectional_collection<_type>::value
+
+  EXPECT_FALSE(IS_BIDIRECTIONAL_COLLECTION(forward_list<int>));
+  EXPECT_FALSE(IS_BIDIRECTIONAL_COLLECTION(const forward_list<int>));
+  EXPECT_FALSE(IS_BIDIRECTIONAL_COLLECTION(forward_list<int>&));
+  EXPECT_TRUE(IS_BIDIRECTIONAL_COLLECTION(list<int>));
+  EXPECT_TRUE(IS_BIDIRECTIONAL_COLLECTION(const list<int>));
+  EXPECT_TRUE(IS_BIDIRECTIONAL_COLLECTION(list<int>&));
+}
+
 TEST(NonConstIterator, SanityCheck) {
   EXPECT_TYPE(vector<int>::iterator, details::non_const_iterator_t<vector<int>>);
   EXPECT_TYPE(vector<int>::iterator, details::non_const_iterator_t<vector<int>&>);
@@ -142,8 +165,7 @@ TEST(NonConstReverseIterator, SanityCheck) {
   EXPECT_TYPE(vector<int>::const_reverse_iterator, details::non_const_reverse_iterator_t<const vector<int>&>);
 }
 
-template <typename _Enumerator>
-string FormatEnumerate(const _Enumerator& iterable) {
+template <typename _Enumerator> string FormatEnumerate(const _Enumerator& iterable) {
   string result{};
   for (const auto& item : iterable)
     result += std::to_string(item.Position()) + ": " + item.Value() + ", ";
@@ -151,7 +173,7 @@ string FormatEnumerate(const _Enumerator& iterable) {
 }
 
 TEST(EnumerateTest, ReturnsCorrectValues) {
-  vector<char> collection{'A', 'B', 'C'};
+  ForwardOnlyCollection<char> collection{'A', 'B', 'C'};
   auto iterator = Enumerate(collection);
 
   EXPECT_EQ("0: A, 1: B, 2: C, ", FormatEnumerate(iterator));
@@ -159,7 +181,7 @@ TEST(EnumerateTest, ReturnsCorrectValues) {
 }
 
 TEST(EnumerateTest, CanModifyValues) {
-  vector<char> collection{'A', 'B', 'C'};
+  ForwardOnlyCollection<char> collection{'A', 'B', 'C'};
   auto iterator = Enumerate(collection);
 
   auto& first = *iterator.begin();
@@ -169,7 +191,7 @@ TEST(EnumerateTest, CanModifyValues) {
 }
 
 TEST(EnumerateTest, OverNonConstCollection) {
-  vector<char> collection{'A', 'B', 'C'};
+  ForwardOnlyCollection<char> collection{'A', 'B', 'C'};
   auto iterator = Enumerate(collection);
 
   TEST_NON_CONST_ITERATOR(iterator, Item<char>&);
@@ -179,7 +201,7 @@ TEST(EnumerateTest, OverNonConstCollection) {
 
 TEST(EnumerateTest, OverConstCollection) {
   // Note: In this case, even iterating non-const uses a const_iterator
-  vector<char> collection{'A', 'B', 'C'};
+  ForwardOnlyCollection<char> collection{'A', 'B', 'C'};
   auto iterator = Enumerate(std::as_const(collection));
 
   TEST_NON_CONST_ITERATOR(iterator, Item<char> const&);
@@ -188,7 +210,7 @@ TEST(EnumerateTest, OverConstCollection) {
 }
 
 TEST(EnumerateTest, EnumerateRvalueCollection) {
-  vector<char> collection{'A', 'B', 'C'};
+  ForwardOnlyCollection<char> collection{'A', 'B', 'C'};
   auto iterator = Enumerate(std::move(collection));
 
   TEST_NON_CONST_ITERATOR(iterator, Item<char>&);
@@ -199,7 +221,7 @@ TEST(EnumerateTest, EnumerateRvalueCollection) {
 TEST(EnumerateTest, OverRvalueConstCollection) {
   // Note: Because we const-cast inside 'enumerate', we need to ensure we correctly handle
   // collections that return const-values even in their non-const iterators
-  vector<char> collection{'A', 'B', 'C'};
+  BiDirectionalCollection<char> collection{'A', 'B', 'C'};
   auto nested_iterator = Iterate(std::as_const(collection));
   auto iterator = Enumerate(std::move(nested_iterator));
 
@@ -208,8 +230,17 @@ TEST(EnumerateTest, OverRvalueConstCollection) {
   EXPECT_TYPE(Item<char>, decltype(iterator)::value_type);
 }
 
+TEST(EnumerateTest, WorksOnInitializerList) {
+  std::initializer_list<char> collection{'A', 'B', 'C'};
+  auto iterator = Enumerate(std::move(collection));
+
+  TEST_NON_CONST_ITERATOR(iterator, Item<char> const&);
+  TEST_CONST_ITERATOR(iterator, Item<char> const&);
+  EXPECT_TYPE(Item<char>, decltype(iterator)::value_type);
+}
+
 TEST(EnumerateReverseTest, ReturnsCorrectValues) {
-  vector<char> collection{'A', 'B', 'C'};
+  BiDirectionalCollection<char> collection{'A', 'B', 'C'};
   auto iterator = Reverse(Enumerate(collection));
 
   EXPECT_EQ("2: C, 1: B, 0: A, ", FormatEnumerate(iterator));
@@ -217,7 +248,7 @@ TEST(EnumerateReverseTest, ReturnsCorrectValues) {
 }
 
 TEST(EnumerateReverseTest, CanModifyValues) {
-  vector<char> collection{'A', 'B', 'C'};
+  BiDirectionalCollection<char> collection{'A', 'B', 'C'};
   auto iterator = Enumerate(collection);
 
   auto& first = *iterator.rbegin();
@@ -227,7 +258,7 @@ TEST(EnumerateReverseTest, CanModifyValues) {
 }
 
 TEST(EnumerateReverseTest, OverNonConstCollection) {
-  vector<char> collection{'A', 'B', 'C'};
+  BiDirectionalCollection<char> collection{'A', 'B', 'C'};
   auto iterator = Enumerate(collection);
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, Item<char>&);
@@ -237,7 +268,7 @@ TEST(EnumerateReverseTest, OverNonConstCollection) {
 
 TEST(EnumerateReverseTest, OverConstCollection) {
   // Note: In this case, even iterating non-const uses a const_iterator
-  vector<char> collection{'A', 'B', 'C'};
+  BiDirectionalCollection<char> collection{'A', 'B', 'C'};
   auto iterator = Enumerate(std::as_const(collection));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, Item<char> const&);
@@ -246,7 +277,7 @@ TEST(EnumerateReverseTest, OverConstCollection) {
 }
 
 TEST(EnumerateReverseTest, EnumerateRvalueCollection) {
-  vector<char> collection{'A', 'B', 'C'};
+  BiDirectionalCollection<char> collection{'A', 'B', 'C'};
   auto iterator = Enumerate(std::move(collection));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, Item<char>&);
@@ -257,7 +288,7 @@ TEST(EnumerateReverseTest, EnumerateRvalueCollection) {
 TEST(EnumerateReverseTest, OverRvalueConstCollection) {
   // Note: Because we const-cast inside 'enumerate', we need to ensure we correctly handle
   // collections that return const-values even in their non-const iterators
-  vector<char> collection{'A', 'B', 'C'};
+  BiDirectionalCollection<char> collection{'A', 'B', 'C'};
   auto nested_iterator = Iterate(std::as_const(collection));
   auto iterator = Enumerate(std::move(nested_iterator));
 
@@ -267,7 +298,7 @@ TEST(EnumerateReverseTest, OverRvalueConstCollection) {
 }
 
 TEST(IterateTest, ReturnsCorrectValues) {
-  vector<int> collection{1, 3, 5};
+  ForwardOnlyCollection<int> collection{1, 3, 5};
   auto iterator = Iterate(collection);
 
   EXPECT_THAT(iterator, ElementsAre(1, 3, 5));
@@ -275,7 +306,7 @@ TEST(IterateTest, ReturnsCorrectValues) {
 }
 
 TEST(IterateTest, CanModifyValues) {
-  vector<int> collection{1, 3, 5};
+  ForwardOnlyCollection<int> collection{1, 3, 5};
   auto iterator = Iterate(collection);
 
   int& first = *iterator.begin();
@@ -285,7 +316,7 @@ TEST(IterateTest, CanModifyValues) {
 }
 
 TEST(IterateTest, OverNonConstCollection) {
-  vector<int> collection{1, 3, 5};
+  ForwardOnlyCollection<int> collection{1, 3, 5};
   auto iterator = Iterate(collection);
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
@@ -295,7 +326,7 @@ TEST(IterateTest, OverNonConstCollection) {
 
 TEST(IterateTest, OverConstCollection) {
   // Note: In this case, even iterating non-const uses a const_iterator
-  vector<int> collection{1, 3, 5};
+  ForwardOnlyCollection<int> collection{1, 3, 5};
   auto iterator = Iterate(std::as_const(collection));
 
   TEST_NON_CONST_ITERATOR(iterator, int const&);
@@ -304,7 +335,7 @@ TEST(IterateTest, OverConstCollection) {
 }
 
 TEST(IterateTest, IterateRvalueCollection) {
-  vector<int> collection{1, 3, 5};
+  ForwardOnlyCollection<int> collection{1, 3, 5};
   auto iterator = Iterate(std::move(collection));
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
@@ -313,7 +344,7 @@ TEST(IterateTest, IterateRvalueCollection) {
 }
 
 TEST(IterateReverseTest, ReturnsCorrectValues) {
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(Iterate(collection));
 
   EXPECT_THAT(iterator, ElementsAre(5, 3, 1));
@@ -321,7 +352,7 @@ TEST(IterateReverseTest, ReturnsCorrectValues) {
 }
 
 TEST(IterateReverseTest, CanModifyValues) {
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Iterate(collection);
 
   int& first = *iterator.rbegin();
@@ -331,7 +362,7 @@ TEST(IterateReverseTest, CanModifyValues) {
 }
 
 TEST(IterateReverseTest, OverNonConstCollection) {
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Iterate(collection);
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
@@ -341,7 +372,7 @@ TEST(IterateReverseTest, OverNonConstCollection) {
 
 TEST(IterateReverseTest, OverConstCollection) {
   // Note: In this case, even iterating non-const uses a const_iterator
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Iterate(std::as_const(collection));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int const&);
@@ -350,7 +381,7 @@ TEST(IterateReverseTest, OverConstCollection) {
 }
 
 TEST(IterateReverseTest, IterateRvalueCollection) {
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Iterate(std::move(collection));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
@@ -359,7 +390,7 @@ TEST(IterateReverseTest, IterateRvalueCollection) {
 }
 
 TEST(ReverseTest, ReturnsCorrectValues) {
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(collection);
 
   EXPECT_THAT(iterator, ElementsAre(5, 3, 1));
@@ -367,7 +398,7 @@ TEST(ReverseTest, ReturnsCorrectValues) {
 }
 
 TEST(ReverseTest, CanModifyValues) {
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(collection);
 
   int& first = *iterator.begin();
@@ -377,7 +408,7 @@ TEST(ReverseTest, CanModifyValues) {
 }
 
 TEST(ReverseTest, OverNonConstCollection) {
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(collection);
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
@@ -387,7 +418,7 @@ TEST(ReverseTest, OverNonConstCollection) {
 
 TEST(ReverseTest, OverConstCollection) {
   // Note: In this case, even iterating non-const uses a const_iterator
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(std::as_const(collection));
 
   TEST_NON_CONST_ITERATOR(iterator, int const&);
@@ -396,7 +427,7 @@ TEST(ReverseTest, OverConstCollection) {
 }
 
 TEST(ReverseTest, ReverseRvalueCollection) {
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(std::move(collection));
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
@@ -405,7 +436,7 @@ TEST(ReverseTest, ReverseRvalueCollection) {
 }
 
 TEST(ReverseReverseTest, ReturnsCorrectValues) {
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(Reverse(collection));
 
   EXPECT_THAT(iterator, ElementsAre(1, 3, 5));
@@ -413,7 +444,7 @@ TEST(ReverseReverseTest, ReturnsCorrectValues) {
 }
 
 TEST(ReverseReverseTest, CanModifyValues) {
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(collection);
 
   int& first = *iterator.rbegin();
@@ -423,7 +454,7 @@ TEST(ReverseReverseTest, CanModifyValues) {
 }
 
 TEST(ReverseReverseTest, OverNonConstCollection) {
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(collection);
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
@@ -433,7 +464,7 @@ TEST(ReverseReverseTest, OverNonConstCollection) {
 
 TEST(ReverseReverseTest, OverConstCollection) {
   // Note: In this case, even iterating non-const uses a const_iterator
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(std::as_const(collection));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int const&);
@@ -442,7 +473,7 @@ TEST(ReverseReverseTest, OverConstCollection) {
 }
 
 TEST(ReverseReverseTest, ReverseRvalueCollection) {
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(std::move(collection));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
@@ -451,8 +482,8 @@ TEST(ReverseReverseTest, ReverseRvalueCollection) {
 }
 
 TEST(JoinTest, ReturnsCorrectValues) {
-  list<int> first{1, 2, 3};
-  vector<int> second{4, 5, 6};
+  ForwardOnlyCollection<int> first{1, 2, 3};
+  OtherForwardOnlyCollection<int> second{4, 5, 6};
   auto iterator = Join(first, second);
 
   EXPECT_THAT(iterator, ElementsAre(1, 2, 3, 4, 5, 6));
@@ -460,8 +491,8 @@ TEST(JoinTest, ReturnsCorrectValues) {
 }
 
 TEST(JoinTest, WorksForEmptyCollections) {
-  list<int> empty{};
-  vector<int> other{1};
+  ForwardOnlyCollection<int> empty{};
+  OtherForwardOnlyCollection<int> other{1};
 
   EXPECT_THAT(Join(empty, other), ElementsAre(1));
   EXPECT_THAT(Join(other, empty), ElementsAre(1));
@@ -469,8 +500,8 @@ TEST(JoinTest, WorksForEmptyCollections) {
 }
 
 TEST(JoinTest, CanModifyValues_InBothCollections) {
-  list<int> first{1};
-  vector<int> second{2};
+  ForwardOnlyCollection<int> first{1};
+  OtherForwardOnlyCollection<int> second{2};
 
   auto iterator = Join(first, second);
 
@@ -481,8 +512,8 @@ TEST(JoinTest, CanModifyValues_InBothCollections) {
 }
 
 TEST(JoinTest, OverNonConstCollections) {
-  list<int> first{};
-  vector<int> second{};
+  ForwardOnlyCollection<int> first{};
+  OtherForwardOnlyCollection<int> second{};
   auto iterator = Join(first, second);
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
@@ -492,8 +523,8 @@ TEST(JoinTest, OverNonConstCollections) {
 
 TEST(JoinTest, OverConstCollections) {
   // Note: In this case, even iterating non-const uses a const_iterator
-  list<int> first{};
-  vector<int> second{};
+  ForwardOnlyCollection<int> first{};
+  OtherForwardOnlyCollection<int> second{};
   auto iterator = Join(std::as_const(first), std::as_const(second));
 
   TEST_NON_CONST_ITERATOR(iterator, int const&);
@@ -503,8 +534,8 @@ TEST(JoinTest, OverConstCollections) {
 
 TEST(JoinTest, OverConstAndNonConstCollections) {
   // Note: In this case, even iterating non-const uses a const_iterator
-  list<int> first{};
-  vector<int> second{};
+  ForwardOnlyCollection<int> first{};
+  OtherForwardOnlyCollection<int> second{};
 
   auto iterator_1 = Join(std::as_const(first), second);
   TEST_NON_CONST_ITERATOR(iterator_1, int const&);
@@ -515,9 +546,17 @@ TEST(JoinTest, OverConstAndNonConstCollections) {
   TEST_CONST_ITERATOR(iterator_2, int const&);
 }
 
+TEST(JoinTest, OverForwardAndBidirectionalCollections) {
+  ForwardOnlyCollection<int> first{1};
+  BiDirectionalCollection<int> second{2};
+  auto iterator = Join(first, second);
+
+  EXPECT_THAT(iterator, ElementsAre(1, 2));
+}
+
 TEST(JoinTest, JoinRvalueCollections) {
-  list<int> first{};
-  vector<int> second{};
+  ForwardOnlyCollection<int> first{};
+  OtherForwardOnlyCollection<int> second{};
   auto iterator = Join(std::move(first), std::move(second));
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
@@ -526,8 +565,8 @@ TEST(JoinTest, JoinRvalueCollections) {
 }
 
 TEST(JoinReverseTest, ReturnsCorrectValues) {
-  list<int> first{1, 2, 3};
-  vector<int> second{4, 5, 6};
+  BiDirectionalCollection<int> first{1, 2, 3};
+  OtherBiDirectionalCollection<int> second{4, 5, 6};
   auto iterator = Reverse(Join(first, second));
 
   EXPECT_THAT(iterator, ElementsAre(6, 5, 4, 3, 2, 1));
@@ -535,8 +574,8 @@ TEST(JoinReverseTest, ReturnsCorrectValues) {
 }
 
 TEST(JoinReverseTest, CanModifyValues) {
-  list<int> first{1};
-  vector<int> second{2};
+  BiDirectionalCollection<int> first{1};
+  OtherBiDirectionalCollection<int> second{2};
 
   auto iterator = Join(first, second);
 
@@ -547,8 +586,8 @@ TEST(JoinReverseTest, CanModifyValues) {
 }
 
 TEST(JoinReverseTest, OverNonConstCollections) {
-  list<int> first{};
-  vector<int> second{};
+  BiDirectionalCollection<int> first{};
+  OtherBiDirectionalCollection<int> second{};
   auto iterator = Join(first, second);
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
@@ -558,8 +597,8 @@ TEST(JoinReverseTest, OverNonConstCollections) {
 
 TEST(JoinReverseTest, OverConstCollections) {
   // Note: In this case, even iterating non-const uses a const_iterator
-  list<int> first{};
-  vector<int> second{};
+  BiDirectionalCollection<int> first{};
+  OtherBiDirectionalCollection<int> second{};
   auto iterator = Join(std::as_const(first), std::as_const(second));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int const&);
@@ -569,8 +608,8 @@ TEST(JoinReverseTest, OverConstCollections) {
 
 TEST(JoinReverseTest, OverConstAndNonConstCollections) {
   // Note: In this case, even iterating non-const uses a const_iterator
-  list<int> first{};
-  vector<int> second{};
+  BiDirectionalCollection<int> first{};
+  OtherBiDirectionalCollection<int> second{};
 
   auto iterator_1 = Join(std::as_const(first), second);
   TEST_NON_CONST_REVERSE_ITERATOR(iterator_1, int const&);
@@ -582,8 +621,8 @@ TEST(JoinReverseTest, OverConstAndNonConstCollections) {
 }
 
 TEST(JoinReverseTest, JoinRvalueCollections) {
-  list<int> first{};
-  vector<int> second{};
+  BiDirectionalCollection<int> first{};
+  OtherBiDirectionalCollection<int> second{};
   auto iterator = Join(std::move(first), std::move(second));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
@@ -591,12 +630,10 @@ TEST(JoinReverseTest, JoinRvalueCollections) {
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
-std::string ToString(const int& value) {
-  return std::to_string(value);
-}
+std::string ToString(const int& value) { return std::to_string(value); }
 
 TEST(MapTest, ReturnsCorrectValues) {
-  vector<int> collection{1, 3, 5};
+  ForwardOnlyCollection<int> collection{1, 3, 5};
   auto iterator = Map(collection, ToString);
 
   EXPECT_THAT(iterator, ElementsAre("1", "3", "5"));
@@ -605,7 +642,7 @@ TEST(MapTest, ReturnsCorrectValues) {
 
 TEST(MapTest, CanModifyValues) {
   // Note: For map, the non-const version means we send a non-const value into the mapping function
-  vector<int> collection{1, 3, 5};
+  ForwardOnlyCollection<int> collection{1, 3, 5};
   auto iterator = Map(collection, [](int& value) -> int {
     value += 100;
     return 0;
@@ -620,7 +657,7 @@ TEST(MapTest, CanModifyValues) {
 
 TEST(MapTest, OverNonConstCollection) {
   // For Map, both const and non-const iterators return the same type (i.e. the return value of the mapping-function)
-  vector<int> collection{1, 3, 5};
+  ForwardOnlyCollection<int> collection{1, 3, 5};
   auto iterator = Map(collection, ToString);
 
   TEST_NON_CONST_ITERATOR(iterator, std::string);
@@ -630,7 +667,7 @@ TEST(MapTest, OverNonConstCollection) {
 
 TEST(MapTest, OverConstCollection) {
   // For Map, both const and non-const iterators return the same type (i.e. the return value of the mapping-function)
-  vector<int> collection{1, 3, 5};
+  ForwardOnlyCollection<int> collection{1, 3, 5};
   auto iterator = Map(std::as_const(collection), ToString);
 
   TEST_NON_CONST_ITERATOR(iterator, std::string);
@@ -640,7 +677,7 @@ TEST(MapTest, OverConstCollection) {
 
 TEST(MapTest, MapRvalueCollection) {
   // For Map, both const and non-const iterators return the same type (i.e. the return value of the mapping-function)
-  vector<int> collection{1, 3, 5};
+  ForwardOnlyCollection<int> collection{1, 3, 5};
   auto iterator = Map(std::move(collection), ToString);
 
   TEST_NON_CONST_ITERATOR(iterator, std::string);
@@ -649,7 +686,7 @@ TEST(MapTest, MapRvalueCollection) {
 }
 
 TEST(MapReverseTest, ReturnsCorrectValues) {
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(Map(collection, ToString));
 
   EXPECT_THAT(iterator, ElementsAre("5", "3", "1"));
@@ -658,7 +695,7 @@ TEST(MapReverseTest, ReturnsCorrectValues) {
 
 TEST(MapReverseTest, CanModifyValues) {
   // Note: For map, the non-const version means we send a non-const value into the mapping function
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Map(collection, [](int& value) -> int {
     value += 100;
     return 0;
@@ -673,7 +710,7 @@ TEST(MapReverseTest, CanModifyValues) {
 
 TEST(MapReverseTest, OverNonConstCollection) {
   // For Map, both const and non-const iterators return the same type (i.e. the return value of the mapping-function)
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Map(collection, ToString);
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, std::string);
@@ -683,7 +720,7 @@ TEST(MapReverseTest, OverNonConstCollection) {
 
 TEST(MapReverseTest, OverConstCollection) {
   // For Map, both const and non-const iterators return the same type (i.e. the return value of the mapping-function)
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Map(std::as_const(collection), ToString);
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, std::string);
@@ -693,7 +730,7 @@ TEST(MapReverseTest, OverConstCollection) {
 
 TEST(MapReverseTest, MapRvalueCollection) {
   // For Map, both const and non-const iterators return the same type (i.e. the return value of the mapping-function)
-  vector<int> collection{1, 3, 5};
+  BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Map(std::move(collection), ToString);
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, std::string);
@@ -713,12 +750,10 @@ TEST(MapTest, MapValues__extract_values_from_std_map) {
   EXPECT_THAT(MapValues(input), ElementsAre(1, 2));
 }
 
-static bool is_odd(const int& value) {
-  return (value % 2) != 0;
-}
+static bool is_odd(const int& value) { return (value % 2) != 0; }
 
 TEST(FilterTest, ReturnsCorrectValues) {
-  vector<int> collection{1, 2, 3, 4, 5};
+  ForwardOnlyCollection<int> collection{1, 2, 3, 4, 5};
   auto iterator = Filter(collection, is_odd);
 
   EXPECT_THAT(iterator, ElementsAre(1, 3, 5));
@@ -726,21 +761,21 @@ TEST(FilterTest, ReturnsCorrectValues) {
 }
 
 TEST(FilterTest, CanFilterFirstValue) {
-  vector<int> collection{0, 1};
+  ForwardOnlyCollection<int> collection{0, 1};
   auto iterator = Filter(collection, is_odd);
 
   EXPECT_THAT(iterator, ElementsAre(1));
 }
 
 TEST(FilterTest, CanFilterConsecutiveValues) {
-  vector<int> collection{0, 0, 0, 1, 2, 2, 2, 3, 4, 4, 4};
+  ForwardOnlyCollection<int> collection{0, 0, 0, 1, 2, 2, 2, 3, 4, 4, 4};
   auto iterator = Filter(collection, is_odd);
 
   EXPECT_THAT(iterator, ElementsAre(1, 3));
 }
 
 TEST(FilterTest, CanModifyValues) {
-  vector<int> collection{1, 2, 3, 4, 5};
+  ForwardOnlyCollection<int> collection{1, 2, 3, 4, 5};
   auto iterator = Filter(collection, is_odd);
 
   int& first = *iterator.begin();
@@ -750,7 +785,7 @@ TEST(FilterTest, CanModifyValues) {
 }
 
 TEST(FilterTest, OverNonConstCollection) {
-  vector<int> collection{1, 2, 3, 4, 5};
+  ForwardOnlyCollection<int> collection{1, 2, 3, 4, 5};
   auto iterator = Filter(collection, is_odd);
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
@@ -760,7 +795,7 @@ TEST(FilterTest, OverNonConstCollection) {
 
 TEST(FilterTest, OverConstCollection) {
   // Note: In this case, even iterating non-const uses a const_iterator
-  vector<int> collection{1, 2, 3, 4, 5};
+  ForwardOnlyCollection<int> collection{1, 2, 3, 4, 5};
   auto iterator = Filter(std::as_const(collection), is_odd);
 
   TEST_NON_CONST_ITERATOR(iterator, int const&);
@@ -769,7 +804,7 @@ TEST(FilterTest, OverConstCollection) {
 }
 
 TEST(FilterTest, FilterRvalueCollection) {
-  vector<int> collection{1, 2, 3, 4, 5};
+  ForwardOnlyCollection<int> collection{1, 2, 3, 4, 5};
   auto iterator = Filter(std::move(collection), is_odd);
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
@@ -778,7 +813,7 @@ TEST(FilterTest, FilterRvalueCollection) {
 }
 
 TEST(FilterReverseTest, ReturnsCorrectValues) {
-  vector<int> collection{1, 2, 3, 4, 5};
+  BiDirectionalCollection<int> collection{1, 2, 3, 4, 5};
   auto iterator = Reverse(Filter(collection, is_odd));
 
   EXPECT_THAT(iterator, ElementsAre(5, 3, 1));
@@ -786,7 +821,7 @@ TEST(FilterReverseTest, ReturnsCorrectValues) {
 }
 
 TEST(FilterReverseTest, CanModifyValues) {
-  vector<int> collection{1, 2, 3, 4, 5};
+  BiDirectionalCollection<int> collection{1, 2, 3, 4, 5};
   auto iterator = Filter(collection, is_odd);
 
   int& first = *iterator.rbegin();
@@ -796,7 +831,7 @@ TEST(FilterReverseTest, CanModifyValues) {
 }
 
 TEST(FilterReverseTest, OverNonConstCollection) {
-  vector<int> collection{1, 2, 3, 4, 5};
+  BiDirectionalCollection<int> collection{1, 2, 3, 4, 5};
   auto iterator = Filter(collection, is_odd);
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
@@ -806,7 +841,7 @@ TEST(FilterReverseTest, OverNonConstCollection) {
 
 TEST(FilterReverseTest, OverConstCollection) {
   // Note: In this case, even iterating non-const uses a const_iterator
-  vector<int> collection{1, 2, 3, 4, 5};
+  BiDirectionalCollection<int> collection{1, 2, 3, 4, 5};
   auto iterator = Filter(std::as_const(collection), is_odd);
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int const&);
@@ -815,7 +850,7 @@ TEST(FilterReverseTest, OverConstCollection) {
 }
 
 TEST(FilterReverseTest, FilterRvalueCollection) {
-  vector<int> collection{1, 2, 3, 4, 5};
+  BiDirectionalCollection<int> collection{1, 2, 3, 4, 5};
   auto iterator = Filter(std::move(collection), is_odd);
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
@@ -823,8 +858,15 @@ TEST(FilterReverseTest, FilterRvalueCollection) {
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
-std::list<std::unique_ptr<int>> ToUniquePtrList(int* values, int values_size) {
-  std::list<std::unique_ptr<int>> result{};
+ForwardOnlyCollection<std::unique_ptr<int>> ToUniquePtrForwardOnlyCollection(int* values, int values_size) {
+  ForwardOnlyCollection<std::unique_ptr<int>> result{};
+  for (int i = values_size - 1; i >= 0; i--)
+    result.push_front(std::make_unique<int>(values[i]));
+  return result;
+}
+
+BiDirectionalCollection<std::unique_ptr<int>> ToUniquePtrBidirectionalCollection(int* values, int values_size) {
+  BiDirectionalCollection<std::unique_ptr<int>> result{};
   for (int i = 0; i < values_size; i++)
     result.push_back(std::make_unique<int>(values[i]));
   return result;
@@ -832,7 +874,7 @@ std::list<std::unique_ptr<int>> ToUniquePtrList(int* values, int values_size) {
 
 TEST(AsReferencesTest_unique_ptr, ReturnsCorrectValues) {
   int values[] = {1, 3, 5};
-  auto collection{ToUniquePtrList(values, 3)};
+  auto collection{ToUniquePtrForwardOnlyCollection(values, 3)};
   auto iterator = AsReferences(collection);
 
   EXPECT_THAT(iterator, ElementsAre(1, 3, 5));
@@ -841,7 +883,7 @@ TEST(AsReferencesTest_unique_ptr, ReturnsCorrectValues) {
 
 TEST(AsReferencesTest_unique_ptr, CanModifyValues) {
   int values[] = {1, 3, 5};
-  auto collection{ToUniquePtrList(values, 3)};
+  auto collection{ToUniquePtrForwardOnlyCollection(values, 3)};
   auto iterator = AsReferences(collection);
 
   int& first = *iterator.begin();
@@ -852,7 +894,7 @@ TEST(AsReferencesTest_unique_ptr, CanModifyValues) {
 
 TEST(AsReferencesTest_unique_ptr, OverNonConstCollection) {
   int values[] = {1, 3, 5};
-  auto collection{ToUniquePtrList(values, 3)};
+  auto collection{ToUniquePtrForwardOnlyCollection(values, 3)};
   auto iterator = AsReferences(collection);
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
@@ -863,7 +905,7 @@ TEST(AsReferencesTest_unique_ptr, OverNonConstCollection) {
 TEST(AsReferencesTest_unique_ptr, OverConstCollection) {
   // Note: In this case, even iterating non-const uses a const_iterator
   int values[] = {1, 3, 5};
-  auto collection{ToUniquePtrList(values, 3)};
+  auto collection{ToUniquePtrForwardOnlyCollection(values, 3)};
   auto iterator = AsReferences(std::as_const(collection));
 
   TEST_NON_CONST_ITERATOR(iterator, int const&);
@@ -873,7 +915,7 @@ TEST(AsReferencesTest_unique_ptr, OverConstCollection) {
 
 TEST(AsReferencesTest_unique_ptr, IterateRvalueCollection) {
   int values[] = {1, 3, 5};
-  auto collection{ToUniquePtrList(values, 3)};
+  auto collection{ToUniquePtrForwardOnlyCollection(values, 3)};
   auto iterator = AsReferences(std::move(collection));
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
@@ -883,7 +925,7 @@ TEST(AsReferencesTest_unique_ptr, IterateRvalueCollection) {
 
 TEST(AsReferencesReverseTest_unique_ptr, ReturnsCorrectValues) {
   int values[] = {1, 3, 5};
-  auto collection{ToUniquePtrList(values, 3)};
+  auto collection{ToUniquePtrBidirectionalCollection(values, 3)};
   auto iterator = Reverse(AsReferences(collection));
 
   EXPECT_THAT(iterator, ElementsAre(5, 3, 1));
@@ -892,7 +934,7 @@ TEST(AsReferencesReverseTest_unique_ptr, ReturnsCorrectValues) {
 
 TEST(AsReferencesReverseTest_unique_ptr, CanModifyValues) {
   int values[] = {1, 3, 5};
-  auto collection{ToUniquePtrList(values, 3)};
+  auto collection{ToUniquePtrBidirectionalCollection(values, 3)};
   auto iterator = AsReferences(collection);
 
   int& first = *iterator.rbegin();
@@ -903,7 +945,7 @@ TEST(AsReferencesReverseTest_unique_ptr, CanModifyValues) {
 
 TEST(AsReferencesReverseTest_unique_ptr, OverNonConstCollection) {
   int values[] = {1, 3, 5};
-  auto collection{ToUniquePtrList(values, 3)};
+  auto collection{ToUniquePtrBidirectionalCollection(values, 3)};
   auto iterator = AsReferences(collection);
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
@@ -914,7 +956,7 @@ TEST(AsReferencesReverseTest_unique_ptr, OverNonConstCollection) {
 TEST(AsReferencesReverseTest_unique_ptr, OverConstCollection) {
   // Note: In this case, even iterating non-const uses a const_iterator
   int values[] = {1, 3, 5};
-  auto collection{ToUniquePtrList(values, 3)};
+  auto collection{ToUniquePtrBidirectionalCollection(values, 3)};
   auto iterator = AsReferences(std::as_const(collection));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int const&);
@@ -924,7 +966,7 @@ TEST(AsReferencesReverseTest_unique_ptr, OverConstCollection) {
 
 TEST(AsReferencesReverseTest_unique_ptr, IterateRvalueCollection) {
   int values[] = {1, 3, 5};
-  auto collection{ToUniquePtrList(values, 3)};
+  auto collection{ToUniquePtrBidirectionalCollection(values, 3)};
   auto iterator = AsReferences(std::move(collection));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
@@ -932,8 +974,15 @@ TEST(AsReferencesReverseTest_unique_ptr, IterateRvalueCollection) {
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
-std::list<int*> ToPointerList(int* values, int values_size) {
-  std::list<int*> result{};
+ForwardOnlyCollection<int*> ToPointerForwardOnlyCollection(int* values, int values_size) {
+  ForwardOnlyCollection<int*> result{};
+  for (int i = values_size - 1; i >= 0; i--)
+    result.push_front(&values[i]);
+  return result;
+}
+
+BiDirectionalCollection<int*> ToPointerBidirectionalCollection(int* values, int values_size) {
+  BiDirectionalCollection<int*> result{};
   for (int i = 0; i < values_size; i++)
     result.push_back(&values[i]);
   return result;
@@ -941,7 +990,7 @@ std::list<int*> ToPointerList(int* values, int values_size) {
 
 TEST(AsReferencesTest_pointer, ReturnsCorrectValues) {
   int values[] = {1, 3, 5};
-  auto collection{ToPointerList(values, 3)};
+  auto collection{ToPointerForwardOnlyCollection(values, 3)};
   auto iterator = AsReferences(collection);
 
   EXPECT_THAT(iterator, ElementsAre(1, 3, 5));
@@ -950,7 +999,7 @@ TEST(AsReferencesTest_pointer, ReturnsCorrectValues) {
 
 TEST(AsReferencesTest_pointer, CanModifyValues) {
   int values[] = {1, 3, 5};
-  auto collection{ToPointerList(values, 3)};
+  auto collection{ToPointerForwardOnlyCollection(values, 3)};
   auto iterator = AsReferences(collection);
 
   int& first = *iterator.begin();
@@ -961,7 +1010,7 @@ TEST(AsReferencesTest_pointer, CanModifyValues) {
 
 TEST(AsReferencesTest_pointer, OverNonConstCollection) {
   int values[] = {1, 3, 5};
-  auto collection{ToPointerList(values, 3)};
+  auto collection{ToPointerForwardOnlyCollection(values, 3)};
   auto iterator = AsReferences(collection);
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
@@ -972,7 +1021,7 @@ TEST(AsReferencesTest_pointer, OverNonConstCollection) {
 TEST(AsReferencesTest_pointer, OverConstCollection) {
   // Note: In this case, even iterating non-const uses a const_iterator
   int values[] = {1, 3, 5};
-  auto collection{ToPointerList(values, 3)};
+  auto collection{ToPointerForwardOnlyCollection(values, 3)};
   auto iterator = AsReferences(std::as_const(collection));
 
   TEST_NON_CONST_ITERATOR(iterator, int const&);
@@ -982,7 +1031,7 @@ TEST(AsReferencesTest_pointer, OverConstCollection) {
 
 TEST(AsReferencesTest_pointer, IterateRvalueCollection) {
   int values[] = {1, 3, 5};
-  auto collection{ToPointerList(values, 3)};
+  auto collection{ToPointerForwardOnlyCollection(values, 3)};
   auto iterator = AsReferences(std::move(collection));
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
@@ -992,7 +1041,7 @@ TEST(AsReferencesTest_pointer, IterateRvalueCollection) {
 
 TEST(AsReferencesReverseTest_pointer, ReturnsCorrectValues) {
   int values[] = {1, 3, 5};
-  auto collection{ToPointerList(values, 3)};
+  auto collection{ToPointerBidirectionalCollection(values, 3)};
   auto iterator = Reverse(AsReferences(collection));
 
   EXPECT_THAT(iterator, ElementsAre(5, 3, 1));
@@ -1001,7 +1050,7 @@ TEST(AsReferencesReverseTest_pointer, ReturnsCorrectValues) {
 
 TEST(AsReferencesReverseTest_pointer, CanModifyValues) {
   int values[] = {1, 3, 5};
-  auto collection{ToPointerList(values, 3)};
+  auto collection{ToPointerBidirectionalCollection(values, 3)};
   auto iterator = AsReferences(collection);
 
   int& first = *iterator.rbegin();
@@ -1012,7 +1061,7 @@ TEST(AsReferencesReverseTest_pointer, CanModifyValues) {
 
 TEST(AsReferencesReverseTest_pointer, OverNonConstCollection) {
   int values[] = {1, 3, 5};
-  auto collection{ToPointerList(values, 3)};
+  auto collection{ToPointerBidirectionalCollection(values, 3)};
   auto iterator = AsReferences(collection);
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
@@ -1023,7 +1072,7 @@ TEST(AsReferencesReverseTest_pointer, OverNonConstCollection) {
 TEST(AsReferencesReverseTest_pointer, OverConstCollection) {
   // Note: In this case, even iterating non-const uses a const_iterator
   int values[] = {1, 3, 5};
-  auto collection{ToPointerList(values, 3)};
+  auto collection{ToPointerBidirectionalCollection(values, 3)};
   auto iterator = AsReferences(std::as_const(collection));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int const&);
@@ -1033,7 +1082,7 @@ TEST(AsReferencesReverseTest_pointer, OverConstCollection) {
 
 TEST(AsReferencesReverseTest_pointer, IterateRvalueCollection) {
   int values[] = {1, 3, 5};
-  auto collection{ToPointerList(values, 3)};
+  auto collection{ToPointerBidirectionalCollection(values, 3)};
   auto iterator = AsReferences(std::move(collection));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
@@ -1042,7 +1091,7 @@ TEST(AsReferencesReverseTest_pointer, IterateRvalueCollection) {
 }
 
 TEST(ChainTest, ReturnsCorrectValues) {
-  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  ForwardOnlyCollection<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
   auto iterator = Chain(collection);
 
   EXPECT_THAT(iterator, ElementsAre(1, 2, 3, 4, 5, 6));
@@ -1050,7 +1099,7 @@ TEST(ChainTest, ReturnsCorrectValues) {
 }
 
 TEST(ChainTest, CanModifyValues) {
-  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  ForwardOnlyCollection<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
   auto iterator = Chain(collection);
 
   int& first = *iterator.begin();
@@ -1060,7 +1109,7 @@ TEST(ChainTest, CanModifyValues) {
 }
 
 TEST(ChainTest, OverNonConstCollection) {
-  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  ForwardOnlyCollection<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
   auto iterator = Chain(collection);
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
@@ -1070,7 +1119,7 @@ TEST(ChainTest, OverNonConstCollection) {
 
 TEST(ChainTest, OverConstCollection) {
   // Note: In this case, even iterating non-const uses a const_iterator
-  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  ForwardOnlyCollection<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
   auto iterator = Chain(std::as_const(collection));
 
   TEST_NON_CONST_ITERATOR(iterator, int const&);
@@ -1079,7 +1128,7 @@ TEST(ChainTest, OverConstCollection) {
 }
 
 TEST(ChainTest, ChainRvalueCollection) {
-  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  ForwardOnlyCollection<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
   auto iterator = Chain(std::move(collection));
 
   TEST_NON_CONST_ITERATOR(iterator, int&);
@@ -1088,21 +1137,33 @@ TEST(ChainTest, ChainRvalueCollection) {
 }
 
 TEST(ChainTest, OverEmptyCollections) {
-  vector<list<int>> collection{{}, {}, {1}, {}, {}, {2}, {}, {}};
+  ForwardOnlyCollection<list<int>> collection{{}, {}, {1}, {}, {}, {2}, {}, {}};
 
   auto result = Chain(collection);
   EXPECT_THAT(result, ElementsAre(1, 2));
 }
 
 TEST(ChainTest, SurvivesEmptyOuterCollection) {
-  vector<list<int>> collection{};
+  ForwardOnlyCollection<list<int>> collection{};
 
   auto result = Chain(collection);
   EXPECT_THAT(result, ElementsAre());
 }
 
+TEST(ChainTest, ForwardOnlyChainOfBidirectionalContainers) {
+  // The fact that it compiles means it passes the test
+  ForwardOnlyCollection<BiDirectionalCollection<int>> collection{};
+  Chain(collection).begin();
+}
+
+TEST(ChainTest, BidirectionalChainOfForwardOnlyContainers) {
+  // The fact that it compiles means it passes the test
+  BiDirectionalCollection<ForwardOnlyCollection<int>> collection{};
+  Chain(collection).begin();
+}
+
 TEST(ChainReverseTest, ReturnsCorrectValues) {
-  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  BiDirectionalCollection<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
   auto iterator = Reverse(Chain(collection));
 
   EXPECT_THAT(iterator, ElementsAre(6, 5, 4, 3, 2, 1));
@@ -1110,7 +1171,7 @@ TEST(ChainReverseTest, ReturnsCorrectValues) {
 }
 
 TEST(ChainReverseTest, CanModifyValues) {
-  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  BiDirectionalCollection<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
   auto iterator = Chain(collection);
 
   int& first = *iterator.rbegin();
@@ -1120,7 +1181,7 @@ TEST(ChainReverseTest, CanModifyValues) {
 }
 
 TEST(ChainReverseTest, OverNonConstCollection) {
-  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  BiDirectionalCollection<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
   auto iterator = Chain(collection);
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
@@ -1130,7 +1191,7 @@ TEST(ChainReverseTest, OverNonConstCollection) {
 
 TEST(ChainReverseTest, OverConstCollection) {
   // Note: In this case, even iterating non-const uses a const_iterator
-  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  BiDirectionalCollection<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
   auto iterator = Chain(std::as_const(collection));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int const&);
@@ -1139,7 +1200,7 @@ TEST(ChainReverseTest, OverConstCollection) {
 }
 
 TEST(ChainReverseTest, ChainRvalueCollection) {
-  vector<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
+  BiDirectionalCollection<list<int>> collection{{1, 2, 3}, {4, 5, 6}};
   auto iterator = Chain(std::move(collection));
 
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);

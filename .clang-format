@@ -1,7 +1,7 @@
 ---
 BasedOnStyle: Google
-AllowShortFunctionsOnASingleLine: 'false'
 AllowShortIfStatementsOnASingleLine: 'false'
 AllowShortLoopsOnASingleLine: 'false'
+AlwaysBreakTemplateDeclarations: 'false'
 ColumnLimit: '120'
 ...
