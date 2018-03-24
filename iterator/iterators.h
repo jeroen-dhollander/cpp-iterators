@@ -20,7 +20,6 @@ template <typename> class ForwardReferencedUnique;
 template <typename> class Referenced;
 template <typename> class ForwardReferenced;
 template <typename> class Reversed;
-template <typename> class ForwardReversed;
 template <typename, typename> class Joined;
 template <typename, typename> class ForwardJoined;
 template <typename, typename> class Mapped;
@@ -337,6 +336,31 @@ using non_const_reverse_iterator_t =
 
 }  // namespace details
 
+// Adds chained operators to the derived class,
+// So you can write Iterate(vector<int>).Map(<map-function>).Reverse().Filter(<filter-function>).Enumerate()
+// Note that any operator here consumes 'this' by moving it into the returned collection,
+// otherwise doing 'return Iterate(x).Reverse()' would return an instance of Reversed that references an instance of
+// Iterate that is freed the second we exit the function.
+template <typename DerivedClass> class WithChainedOperators {
+ public:
+  template <typename Function> auto map(Function&& function) {
+    return Map(MoveSelf(), std::forward<Function>(function));
+  }
+
+  template <typename Function> auto filter(Function&& function) {
+    return Filter(MoveSelf(), std::forward<Function>(function));
+  }
+
+  auto reverse() { return Reverse(MoveSelf()); }
+  auto enumerate() { return Enumerate(MoveSelf()); }
+
+ private:
+  DerivedClass MoveSelf() {
+    DerivedClass* self = static_cast<DerivedClass*>(this);
+    return std::move(*self);
+  }
+};
+
 // Returned value when iterating Enumerate
 template <typename T> class Item {
  public:
@@ -397,7 +421,8 @@ template <typename _iterator, typename _return_type> class EnumeratedIterator {
   _Item item_;
 };
 
-template <typename T> class ForwardEnumerated {
+// contains the forward iterating shared by all enumerators (forward-only and bidirectional)
+template <typename T> class EnumeratedBase {
  public:
   using _collection_type = typename std::remove_reference<T>::type;
   using _collection_value_type = typename _collection_type::value_type;
@@ -411,7 +436,7 @@ template <typename T> class ForwardEnumerated {
   using iterator =
       typename details::conditional_t<details::is_const_collection<T>::value, const_iterator, _non_const_iterator>;
 
-  explicit ForwardEnumerated(T&& iterable) : iterable_(std::forward<T>(iterable)) {}
+  explicit EnumeratedBase(T&& iterable) : iterable_(std::forward<T>(iterable)) {}
 
   const_iterator begin() const {
     return const_iterator{details::cbegin(iterable_), details::cend(iterable_), 0, kIncrement};
@@ -431,10 +456,20 @@ template <typename T> class ForwardEnumerated {
   T iterable_;
 };
 
-template <typename T> class Enumerated : public ForwardEnumerated<T> {
+// the forward-only enumerator
+template <typename T>
+class ForwardEnumerated : public EnumeratedBase<T>, public WithChainedOperators<ForwardEnumerated<T>> {
  public:
-  using typename ForwardEnumerated<T>::_collection_type;
-  using typename ForwardEnumerated<T>::_collection_value_type;
+  explicit ForwardEnumerated(T&& iterable) : EnumeratedBase<T>(std::forward<T>(iterable)) {}
+
+  // Note: all functionality is proved by the base-classes
+};
+
+// the bidirectional enumerator
+template <typename T> class Enumerated : public EnumeratedBase<T>, public WithChainedOperators<Enumerated<T>> {
+ public:
+  using typename EnumeratedBase<T>::_collection_type;
+  using typename EnumeratedBase<T>::_collection_value_type;
   using _Item = Item<_collection_value_type>;
   using _collection_const_reverse_iterator = typename _collection_type::const_reverse_iterator;
   using _collection_reverse_iterator = typename _collection_type::reverse_iterator;
@@ -444,7 +479,7 @@ template <typename T> class Enumerated : public ForwardEnumerated<T> {
   using reverse_iterator = typename details::conditional_t<details::is_const_collection<T>::value,
                                                            const_reverse_iterator, _non_const_reverse_iterator>;
 
-  explicit Enumerated(T&& iterable) : ForwardEnumerated<T>(std::forward<T>(iterable)) {}
+  explicit Enumerated(T&& iterable) : EnumeratedBase<T>(std::forward<T>(iterable)) {}
 
   const_reverse_iterator rbegin() const {
     return const_reverse_iterator{details::crbegin(this->iterable_), details::crend(this->iterable_), MaxPosition(),
@@ -473,7 +508,8 @@ template <typename T> class Enumerated : public ForwardEnumerated<T> {
   constexpr static int kDecrement = -1;
 };
 
-template <typename T> class ForwardIterated {
+// contains the forward iterating shared by all iterators (forward-only and bidirectional)
+template <typename T> class IteratedBase {
  public:
   using _iterable = typename details::remove_reference_t<T>;
 
@@ -481,7 +517,7 @@ template <typename T> class ForwardIterated {
   using const_iterator = typename _iterable::const_iterator;
   using iterator = details::non_const_iterator_t<T>;
 
-  explicit ForwardIterated(T&& iterable) : iterable_(std::forward<T>(iterable)) {}
+  explicit IteratedBase(T&& iterable) : iterable_(std::forward<T>(iterable)) {}
 
   iterator begin() { return std::begin(iterable_); }
   iterator end() { return std::end(iterable_); }
@@ -492,13 +528,22 @@ template <typename T> class ForwardIterated {
   T iterable_;
 };
 
-template <typename T> class Iterated : public ForwardIterated<T> {
+// the forward-only iterator
+template <typename T> class ForwardIterated : public IteratedBase<T>, public WithChainedOperators<ForwardIterated<T>> {
  public:
-  using typename ForwardIterated<T>::_iterable;
+  explicit ForwardIterated(T&& iterable) : IteratedBase<T>(std::forward<T>(iterable)) {}
+
+  // Note: all functionality is proved by the base-classes
+};
+
+// the bidirectional iterator
+template <typename T> class Iterated : public IteratedBase<T>, public WithChainedOperators<Iterated<T>> {
+ public:
+  using typename IteratedBase<T>::_iterable;
   using const_reverse_iterator = typename _iterable::const_reverse_iterator;
   using reverse_iterator = details::non_const_reverse_iterator_t<T>;
 
-  explicit Iterated(T&& iterable) : ForwardIterated<T>(std::forward<T>(iterable)) {}
+  explicit Iterated(T&& iterable) : IteratedBase<T>(std::forward<T>(iterable)) {}
 
   reverse_iterator rbegin() { return details::rbegin(this->iterable_); }
   reverse_iterator rend() { return details::rend(this->iterable_); }
@@ -567,7 +612,8 @@ template <typename _outer_iterator, typename _inner_iterator> class ChainedItera
   GetIteratorFunction get_inner_end_;
 };
 
-template <typename T> class ForwardChained {
+// contains the forward iterating shared by all iterators (forward-only and bidirectional)
+template <typename T> class ChainedBase {
  public:
   using _outer_collection = details::remove_cvref_t<T>;
   using _outer_const_iterator = typename _outer_collection::const_iterator;
@@ -585,7 +631,7 @@ template <typename T> class ForwardChained {
   using const_iterator = ChainedIterator<_outer_const_iterator, _inner_const_iterator>;
   using iterator = ChainedIterator<_outer_iterator, _inner_iterator>;
 
-  ForwardChained(T&& data) : data_(std::forward<T>(data)) {}
+  ChainedBase(T&& data) : data_(std::forward<T>(data)) {}
 
   iterator begin() { return iterator{std::begin(data_), std::end(data_), GetBegin, GetEnd}; }
   iterator end() { return iterator{std::end(data_), std::end(data_), GetBegin, GetEnd}; }
@@ -607,10 +653,18 @@ template <typename T> class ForwardChained {
   T data_;
 };
 
-template <typename T> class Chained : public ForwardChained<T> {
+// The forward-only iterator
+template <typename T> class ForwardChained : public ChainedBase<T>, public WithChainedOperators<ForwardChained<T>> {
  public:
-  using typename ForwardChained<T>::_outer_collection;
-  using typename ForwardChained<T>::_inner_collection;
+  ForwardChained(T&& data) : ChainedBase<T>(std::forward<T>(data)) {}
+  // Note: all functionality is proved by the base-classes
+};
+
+// The bi-direcitonal iterator
+template <typename T> class Chained : public ChainedBase<T>, public WithChainedOperators<Chained<T>> {
+ public:
+  using typename ChainedBase<T>::_outer_collection;
+  using typename ChainedBase<T>::_inner_collection;
 
   using _outer_const_reverse_iterator = typename _outer_collection::const_reverse_iterator;
   using _outer_non_const_reverse_iterator = typename _outer_collection::reverse_iterator;
@@ -627,7 +681,7 @@ template <typename T> class Chained : public ForwardChained<T> {
   using const_reverse_iterator = ChainedIterator<_outer_const_reverse_iterator, _inner_const_reverse_iterator>;
   using reverse_iterator = ChainedIterator<_outer_reverse_iterator, _inner_reverse_iterator>;
 
-  Chained(T&& data) : ForwardChained<T>(std::forward<T>(data)) {}
+  Chained(T&& data) : ChainedBase<T>(std::forward<T>(data)) {}
 
   reverse_iterator rbegin() {
     return reverse_iterator{details::rbegin(this->data_), details::rend(this->data_), GetReverseBegin, GetReverseEnd};
@@ -675,7 +729,8 @@ template <typename _iterator, typename _return_value> class ReferencedIterator {
   _iterator end_;
 };
 
-template <typename T> class ForwardReferenced {
+// contains the forward iterating shared by all iterators (forward-only and bidirectional)
+template <typename T> class ReferencedBase {
  public:
   using _collection_type = typename details::remove_reference_t<T>;
   using _collection_value_type = details::remove_pointer_t<typename _collection_type::value_type>;
@@ -688,7 +743,7 @@ template <typename T> class ForwardReferenced {
   using iterator =
       typename details::conditional_t<details::is_const_type<T>::value, const_iterator, _non_const_iterator>;
 
-  explicit ForwardReferenced(T&& iterable) : iterable_(std::forward<T>(iterable)) {}
+  explicit ReferencedBase(T&& iterable) : iterable_(std::forward<T>(iterable)) {}
 
   iterator begin() { return iterator{std::begin(iterable_), std::end(iterable_)}; }
   iterator end() { return iterator{std::end(iterable_), std::end(iterable_)}; }
@@ -699,10 +754,19 @@ template <typename T> class ForwardReferenced {
   T iterable_;
 };
 
-template <typename T> class Referenced : public ForwardReferenced<T> {
+// the forward-only iterator
+template <typename T>
+class ForwardReferenced : public ReferencedBase<T>, public WithChainedOperators<ForwardReferenced<T>> {
  public:
-  using typename ForwardReferenced<T>::_collection_type;
-  using typename ForwardReferenced<T>::value_type;
+  explicit ForwardReferenced(T&& iterable) : ReferencedBase<T>(std::forward<T>(iterable)) {}
+  // Note: all functionality is proved by the base-classes
+};
+
+// the bi-directional iterator
+template <typename T> class Referenced : public ReferencedBase<T>, public WithChainedOperators<Referenced<T>> {
+ public:
+  using typename ReferencedBase<T>::_collection_type;
+  using typename ReferencedBase<T>::value_type;
   using _collection_const_reverse_iterator = typename _collection_type::const_reverse_iterator;
   using _collection_reverse_iterator = typename _collection_type::reverse_iterator;
 
@@ -710,7 +774,7 @@ template <typename T> class Referenced : public ForwardReferenced<T> {
   using _non_const_reverse_iterator = ReferencedIterator<_collection_reverse_iterator, value_type>;
   using reverse_iterator = typename details::conditional_t<details::is_const_type<T>::value, const_reverse_iterator,
                                                            _non_const_reverse_iterator>;
-  explicit Referenced(T&& iterable) : ForwardReferenced<T>(std::forward<T>(iterable)) {}
+  explicit Referenced(T&& iterable) : ReferencedBase<T>(std::forward<T>(iterable)) {}
 
   reverse_iterator rbegin() {
     return reverse_iterator{details::rbegin(this->iterable_), details::rend(this->iterable_)};
@@ -752,7 +816,8 @@ template <typename _iterator, typename _return_value> class ReferencedUniqueIter
   _iterator end_;
 };
 
-template <typename T> class ForwardReferencedUnique {
+// contains the forward iterating shared by all iterators (forward-only and bidirectional)
+template <typename T> class ReferencedUniqueBase {
  public:
   using _collection_type = typename details::remove_reference_t<T>;
   using _collection_value_type = typename _collection_type::value_type;
@@ -765,7 +830,7 @@ template <typename T> class ForwardReferencedUnique {
   using iterator =
       typename details::conditional_t<details::is_const_type<T>::value, const_iterator, _non_const_iterator>;
 
-  explicit ForwardReferencedUnique(T&& iterable) : iterable_(std::forward<T>(iterable)) {}
+  explicit ReferencedUniqueBase(T&& iterable) : iterable_(std::forward<T>(iterable)) {}
 
   iterator begin() { return iterator{std::begin(iterable_), std::end(iterable_)}; }
   iterator end() { return iterator{std::end(iterable_), std::end(iterable_)}; }
@@ -776,10 +841,21 @@ template <typename T> class ForwardReferencedUnique {
   T iterable_;
 };
 
-template <typename T> class ReferencedUnique : public ForwardReferencedUnique<T> {
+// The forward-only iterator
+template <typename T>
+class ForwardReferencedUnique : public ReferencedUniqueBase<T>,
+                                public WithChainedOperators<ForwardReferencedUnique<T>> {
  public:
-  using typename ForwardReferencedUnique<T>::_collection_type;
-  using typename ForwardReferencedUnique<T>::value_type;
+  explicit ForwardReferencedUnique(T&& iterable) : ReferencedUniqueBase<T>(std::forward<T>(iterable)) {}
+  // Note: all functionality is proved by the base-classes
+};
+
+// The bi-directional iterator
+template <typename T>
+class ReferencedUnique : public ReferencedUniqueBase<T>, public WithChainedOperators<ReferencedUnique<T>> {
+ public:
+  using typename ReferencedUniqueBase<T>::_collection_type;
+  using typename ReferencedUniqueBase<T>::value_type;
   using _collection_const_reverse_iterator = typename _collection_type::const_reverse_iterator;
   using _collection_reverse_iterator = typename _collection_type::reverse_iterator;
 
@@ -788,7 +864,7 @@ template <typename T> class ReferencedUnique : public ForwardReferencedUnique<T>
   using reverse_iterator = typename details::conditional_t<details::is_const_type<T>::value, const_reverse_iterator,
                                                            _non_const_reverse_iterator>;
 
-  explicit ReferencedUnique(T&& iterable) : ForwardReferencedUnique<T>(std::forward<T>(iterable)) {}
+  explicit ReferencedUnique(T&& iterable) : ReferencedUniqueBase<T>(std::forward<T>(iterable)) {}
 
   reverse_iterator rbegin() {
     return reverse_iterator{details::rbegin(this->iterable_), details::rend(this->iterable_)};
@@ -805,7 +881,7 @@ template <typename T> class ReferencedUnique : public ForwardReferencedUnique<T>
   }
 };
 
-template <typename T> class Reversed {
+template <typename T> class Reversed : public WithChainedOperators<Reversed<T>> {
  public:
   using _iterable = typename details::remove_reference_t<T>;
 
@@ -857,7 +933,8 @@ template <typename _FirstIterator, typename _SecondIterator> class JoinedIterato
   _SecondIterator second_end_;
 };
 
-template <typename T1, typename T2> class ForwardJoined {
+// contains the forward iterating shared by all iterators (forward-only and bidirectional
+template <typename T1, typename T2> class JoinedBase {
  public:
   using _iterable_1 = typename details::remove_reference_t<T1>;
   using _const_iterator_1 = typename _iterable_1::const_iterator;
@@ -877,7 +954,7 @@ template <typename T1, typename T2> class ForwardJoined {
   using iterator =
       typename details::conditional_t<details::is_any_const<T1, T2>::value, const_iterator, _non_const_iterator>;
 
-  ForwardJoined(T1&& data_1, T2&& data_2) : first_(std::forward<T1>(data_1)), second_(std::forward<T2>(data_2)) {}
+  JoinedBase(T1&& data_1, T2&& data_2) : first_(std::forward<T1>(data_1)), second_(std::forward<T2>(data_2)) {}
 
   iterator begin() { return iterator{std::begin(first_), std::end(first_), std::begin(second_), std::end(second_)}; }
 
@@ -897,10 +974,20 @@ template <typename T1, typename T2> class ForwardJoined {
   T2 second_;
 };
 
-template <typename T1, typename T2> class Joined : public ForwardJoined<T1, T2> {
+// The forward-only iterator
+template <typename T1, typename T2>
+class ForwardJoined : public JoinedBase<T1, T2>, public WithChainedOperators<ForwardJoined<T1, T2>> {
  public:
-  using typename ForwardJoined<T1, T2>::_iterable_1;
-  using typename ForwardJoined<T1, T2>::_iterable_2;
+  ForwardJoined(T1&& data_1, T2&& data_2) : JoinedBase<T1, T2>(std::forward<T1>(data_1), std::forward<T2>(data_2)) {}
+  // Note: all functionality is proved by the base-classes
+};
+
+// The bidirectional iterator
+template <typename T1, typename T2>
+class Joined : public JoinedBase<T1, T2>, public WithChainedOperators<Joined<T1, T2>> {
+ public:
+  using typename JoinedBase<T1, T2>::_iterable_1;
+  using typename JoinedBase<T1, T2>::_iterable_2;
   using _const_reverse_iterator_1 = typename _iterable_1::const_reverse_iterator;
   using _reverse_iterator_1 = typename _iterable_1::reverse_iterator;
 
@@ -913,7 +1000,7 @@ template <typename T1, typename T2> class Joined : public ForwardJoined<T1, T2> 
       JoinedIterator<typename _iterable_2::const_reverse_iterator, typename _iterable_1::const_reverse_iterator>;
   using reverse_iterator = typename details::conditional_t<details::is_any_const<T1, T2>::value, const_reverse_iterator,
                                                            _non_const_reverse_iterator>;
-  Joined(T1&& data_1, T2&& data_2) : ForwardJoined<T1, T2>(std::forward<T1>(data_1), std::forward<T2>(data_2)) {}
+  Joined(T1&& data_1, T2&& data_2) : JoinedBase<T1, T2>(std::forward<T1>(data_1), std::forward<T2>(data_2)) {}
 
   reverse_iterator rbegin() {
     return reverse_iterator{details::rbegin(this->second_), details::rend(this->second_), details::rbegin(this->first_),
@@ -954,7 +1041,8 @@ template <typename _iterable, typename _function> class MappedIterator {
   const _function& mapping_function_;
 };
 
-template <typename T, typename Function> class ForwardMapped {
+// contains the forward iterating shared by all enumerators (forward-only and bidirectional)
+template <typename T, typename Function> class MappedBase {
  public:
   using _iterable = typename details::remove_reference_t<T>;
   using _iterable_value_type = typename _iterable::value_type;
@@ -967,7 +1055,7 @@ template <typename T, typename Function> class ForwardMapped {
   using iterator =
       typename details::conditional_t<details::is_const_type<T>::value, const_iterator, _non_const_iterator>;
 
-  ForwardMapped(T&& iterable, Function&& mapping_function)
+  MappedBase(T&& iterable, Function&& mapping_function)
       : iterable_(std::forward<T>(iterable)), mapping_function_(std::forward<Function>(mapping_function)) {}
 
   iterator begin() { return iterator{std::begin(iterable_), std::end(iterable_), mapping_function_}; }
@@ -987,9 +1075,20 @@ template <typename T, typename Function> class ForwardMapped {
   Function mapping_function_;
 };
 
-template <typename T, typename Function> class Mapped : public ForwardMapped<T, Function> {
+// The forward-only iterator
+template <typename T, typename Function>
+class ForwardMapped : public MappedBase<T, Function>, public WithChainedOperators<ForwardMapped<T, Function>> {
  public:
-  using typename ForwardMapped<T, Function>::_iterable;
+  ForwardMapped(T&& iterable, Function&& mapping_function)
+      : MappedBase<T, Function>(std::forward<T>(iterable), std::forward<Function>(mapping_function)) {}
+  // Note: all functionality is proved by the base-classes
+};
+
+// The bi-directional iterator
+template <typename T, typename Function>
+class Mapped : public MappedBase<T, Function>, public WithChainedOperators<Mapped<T, Function>> {
+ public:
+  using typename MappedBase<T, Function>::_iterable;
   using _iterable_const_reverse_iterator = typename _iterable::const_reverse_iterator;
   using _iterable_reverse_iterator = typename _iterable::reverse_iterator;
   using _non_const_reverse_iterator =
@@ -1001,7 +1100,7 @@ template <typename T, typename Function> class Mapped : public ForwardMapped<T, 
                                                            _non_const_reverse_iterator>;
 
   Mapped(T&& iterable, Function&& mapping_function)
-      : ForwardMapped<T, Function>(std::forward<T>(iterable), std::forward<Function>(mapping_function)) {}
+      : MappedBase<T, Function>(std::forward<T>(iterable), std::forward<Function>(mapping_function)) {}
 
   reverse_iterator rbegin() {
     return reverse_iterator{details::rbegin(this->iterable_), details::rend(this->iterable_), this->mapping_function_};
@@ -1053,7 +1152,8 @@ template <typename _iterable, typename _function> class FilterIterator {
   const _function& filter_;
 };
 
-template <typename T, typename FilterFunction> class ForwardFiltered {
+// contains the forward iterating shared by all enumerators (forward-only and bidirectional)
+template <typename T, typename FilterFunction> class FilteredBase {
  public:
   using _iterable = typename details::remove_reference_t<T>;
   using _iterable_const_iterator = typename _iterable::const_iterator;
@@ -1065,7 +1165,7 @@ template <typename T, typename FilterFunction> class ForwardFiltered {
   using iterator =
       typename details::conditional_t<details::is_const_type<T>::value, const_iterator, _non_const_iterator>;
 
-  ForwardFiltered(T&& iterable, FilterFunction&& filter)
+  FilteredBase(T&& iterable, FilterFunction&& filter)
       : iterable_(std::forward<T>(iterable)), filter_(std::forward<FilterFunction>(filter)) {}
 
   iterator begin() { return iterator{std::begin(iterable_), std::end(iterable_), filter_}; }
@@ -1078,9 +1178,21 @@ template <typename T, typename FilterFunction> class ForwardFiltered {
   FilterFunction filter_;
 };
 
-template <typename T, typename FilterFunction> class Filtered : public ForwardFiltered<T, FilterFunction> {
+// The forward-only iterator
+template <typename T, typename FilterFunction>
+class ForwardFiltered : public FilteredBase<T, FilterFunction>,
+                        public WithChainedOperators<ForwardFiltered<T, FilterFunction>> {
  public:
-  using typename ForwardFiltered<T, FilterFunction>::_iterable;
+  ForwardFiltered(T&& iterable, FilterFunction&& filter)
+      : FilteredBase<T, FilterFunction>(std::forward<T>(iterable), std::forward<FilterFunction>(filter)) {}
+  // Note: all functionality is proved by the base-classes
+};
+
+// The bi-directional iterator
+template <typename T, typename FilterFunction>
+class Filtered : public FilteredBase<T, FilterFunction>, public WithChainedOperators<Filtered<T, FilterFunction>> {
+ public:
+  using typename FilteredBase<T, FilterFunction>::_iterable;
   using _iterable_const_reverse_iterator = typename _iterable::const_reverse_iterator;
   using _iterable_reverse_iterator = typename _iterable::reverse_iterator;
   using _non_const_reverse_iterator =
@@ -1092,7 +1204,7 @@ template <typename T, typename FilterFunction> class Filtered : public ForwardFi
                                                            _non_const_reverse_iterator>;
 
   Filtered(T&& iterable, FilterFunction&& filter)
-      : ForwardFiltered<T, FilterFunction>(std::forward<T>(iterable), std::forward<FilterFunction>(filter)) {}
+      : FilteredBase<T, FilterFunction>(std::forward<T>(iterable), std::forward<FilterFunction>(filter)) {}
 
   reverse_iterator rbegin() {
     return reverse_iterator{details::rbegin(this->iterable_), details::rend(this->iterable_), this->filter_};

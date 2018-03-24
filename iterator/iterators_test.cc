@@ -48,6 +48,10 @@ template <class T> std::string type_name() {
   return r;
 }
 
+bool is_odd(const int& value) { return (value % 2) != 0; }
+template <typename T> std::string AnyMappingFunction(const T& value) { return "any-value"; }
+template <typename T> bool AnyFilterFunction(const T& value) { return true; }
+
 // Checks that the type returned by '_actual' matches the '_expected' type.
 // On failure, prints a human-readable message
 #define EXPECT_TYPE(_expected, _actual) EXPECT_EQ(type_name<_expected>(), type_name<_actual>())
@@ -98,6 +102,32 @@ template <class T> std::string type_name() {
     /* Test reverse_iterator return value */                                                                  \
     EXPECT_TYPE(_expected_type, decltype(std::declval<IterableClass::reverse_iterator>().operator*()));       \
     EXPECT_TYPE(_expected_type, decltype(std::declval<const IterableClass::reverse_iterator>().operator*())); \
+  }
+
+// Tests the chained-operators suported on a forward-only collection.
+// These are '.map', '.filter' and '.enumerate'
+#define TEST_FORWARD_ONLY_CHAINED_OPERATORS(_iterable)                                                   \
+  {                                                                                                      \
+    using _value_type = decltype(_iterable)::value_type;                                                 \
+                                                                                                         \
+    using expected_map_type = decltype(Map(std::move(_iterable), AnyMappingFunction<_value_type>));      \
+    EXPECT_TYPE(expected_map_type, decltype(_iterable.map(AnyMappingFunction<_value_type>)));            \
+                                                                                                         \
+    using expected_filter_type = decltype(Filter(std::move(_iterable), AnyFilterFunction<_value_type>)); \
+    EXPECT_TYPE(expected_filter_type, decltype(_iterable.filter(AnyFilterFunction<_value_type>)));       \
+                                                                                                         \
+    using expected_enumerate_type = decltype(Enumerate(std::move(_iterable)));                           \
+    EXPECT_TYPE(expected_enumerate_type, decltype(_iterable.enumerate()));                               \
+  }
+
+// Tests the chained-operators suported on a bidirectional collection.
+// These are '.reverse' and everything defined on the forward-only collection.
+#define TEST_BIDIRECTIONAL_CHAINED_OPERATORS(_iterable)                     \
+  {                                                                         \
+    TEST_FORWARD_ONLY_CHAINED_OPERATORS(_iterable);                         \
+                                                                            \
+    using expected_reversed_type = decltype(Reverse(std::move(_iterable))); \
+    EXPECT_TYPE(expected_reversed_type, decltype(_iterable.reverse()));     \
   }
 
 TEST(IsConstTest, SanityCheck) {
@@ -239,6 +269,13 @@ TEST(EnumerateTest, WorksOnInitializerList) {
   EXPECT_TYPE(Item<char>, decltype(iterator)::value_type);
 }
 
+TEST(EnumerateTest, CanChainOperators) {
+  auto forward_iterator = Enumerate(ForwardOnlyCollection<int>{});
+  auto bidirectional_iterator = Enumerate(BiDirectionalCollection<int>{});
+  TEST_FORWARD_ONLY_CHAINED_OPERATORS(forward_iterator);
+  TEST_BIDIRECTIONAL_CHAINED_OPERATORS(bidirectional_iterator);
+}
+
 TEST(EnumerateReverseTest, ReturnsCorrectValues) {
   BiDirectionalCollection<char> collection{'A', 'B', 'C'};
   auto iterator = Reverse(Enumerate(collection));
@@ -343,6 +380,13 @@ TEST(IterateTest, IterateRvalueCollection) {
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
+TEST(IterateTest, CanChainOperators) {
+  auto forward_iterator = Iterate(ForwardOnlyCollection<int>{});
+  auto bidirectional_iterator = Iterate(BiDirectionalCollection<int>{});
+  TEST_FORWARD_ONLY_CHAINED_OPERATORS(forward_iterator);
+  TEST_BIDIRECTIONAL_CHAINED_OPERATORS(bidirectional_iterator);
+}
+
 TEST(IterateReverseTest, ReturnsCorrectValues) {
   BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(Iterate(collection));
@@ -433,6 +477,11 @@ TEST(ReverseTest, ReverseRvalueCollection) {
   TEST_NON_CONST_ITERATOR(iterator, int&);
   TEST_CONST_ITERATOR(iterator, int const&);
   EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(ReverseTest, CanChainOperators) {
+  auto bidirectional_iterator = Reverse(BiDirectionalCollection<int>{});
+  TEST_BIDIRECTIONAL_CHAINED_OPERATORS(bidirectional_iterator);
 }
 
 TEST(ReverseReverseTest, ReturnsCorrectValues) {
@@ -564,6 +613,13 @@ TEST(JoinTest, JoinRvalueCollections) {
   EXPECT_TYPE(int, decltype(iterator)::value_type);
 }
 
+TEST(JoinTest, CanChainOperators) {
+  auto forward_iterator = Join(ForwardOnlyCollection<int>{}, OtherForwardOnlyCollection<int>{});
+  auto bidirectional_iterator = Join(BiDirectionalCollection<int>{}, OtherBiDirectionalCollection<int>{});
+  TEST_FORWARD_ONLY_CHAINED_OPERATORS(forward_iterator);
+  TEST_BIDIRECTIONAL_CHAINED_OPERATORS(bidirectional_iterator);
+}
+
 TEST(JoinReverseTest, ReturnsCorrectValues) {
   BiDirectionalCollection<int> first{1, 2, 3};
   OtherBiDirectionalCollection<int> second{4, 5, 6};
@@ -685,6 +741,13 @@ TEST(MapTest, MapRvalueCollection) {
   EXPECT_TYPE(std::string, decltype(iterator)::value_type);
 }
 
+TEST(MapTest, CanChainOperators) {
+  auto forward_iterator = Map(ForwardOnlyCollection<int>{}, ToString);
+  auto bidirectional_iterator = Map(BiDirectionalCollection<int>{}, ToString);
+  TEST_FORWARD_ONLY_CHAINED_OPERATORS(forward_iterator);
+  TEST_BIDIRECTIONAL_CHAINED_OPERATORS(bidirectional_iterator);
+}
+
 TEST(MapReverseTest, ReturnsCorrectValues) {
   BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(Map(collection, ToString));
@@ -750,8 +813,6 @@ TEST(MapTest, MapValues__extract_values_from_std_map) {
   EXPECT_THAT(MapValues(input), ElementsAre(1, 2));
 }
 
-static bool is_odd(const int& value) { return (value % 2) != 0; }
-
 TEST(FilterTest, ReturnsCorrectValues) {
   ForwardOnlyCollection<int> collection{1, 2, 3, 4, 5};
   auto iterator = Filter(collection, is_odd);
@@ -810,6 +871,13 @@ TEST(FilterTest, FilterRvalueCollection) {
   TEST_NON_CONST_ITERATOR(iterator, int&);
   TEST_CONST_ITERATOR(iterator, int const&);
   EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(FilterTest, CanChainOperators) {
+  auto forward_iterator = Filter(ForwardOnlyCollection<int>{}, is_odd);
+  auto bidirectional_iterator = Filter(BiDirectionalCollection<int>{}, is_odd);
+  TEST_FORWARD_ONLY_CHAINED_OPERATORS(forward_iterator);
+  TEST_BIDIRECTIONAL_CHAINED_OPERATORS(bidirectional_iterator);
 }
 
 TEST(FilterReverseTest, ReturnsCorrectValues) {
@@ -921,6 +989,16 @@ TEST(AsReferencesTest_unique_ptr, IterateRvalueCollection) {
   TEST_NON_CONST_ITERATOR(iterator, int&);
   TEST_CONST_ITERATOR(iterator, int const&);
   EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(AsReferencesTest_unique_ptr, CanChainOperators) {
+  int values[] = {1, 3, 5};
+  auto forward_collection{ToUniquePtrForwardOnlyCollection(values, 3)};
+  auto forward_iterator = AsReferences(forward_collection);
+  auto bidirectional_collection{ToUniquePtrBidirectionalCollection(values, 3)};
+  auto bidirectional_iterator = AsReferences(bidirectional_collection);
+  TEST_FORWARD_ONLY_CHAINED_OPERATORS(forward_iterator);
+  TEST_BIDIRECTIONAL_CHAINED_OPERATORS(bidirectional_iterator);
 }
 
 TEST(AsReferencesReverseTest_unique_ptr, ReturnsCorrectValues) {
@@ -1037,6 +1115,16 @@ TEST(AsReferencesTest_pointer, IterateRvalueCollection) {
   TEST_NON_CONST_ITERATOR(iterator, int&);
   TEST_CONST_ITERATOR(iterator, int const&);
   EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+TEST(AsReferencesTest_pointer, CanChainOperators) {
+  int values[] = {1, 3, 5};
+  auto forward_collection{ToPointerForwardOnlyCollection(values, 3)};
+  auto forward_iterator = AsReferences(forward_collection);
+  auto bidirectional_collection{ToPointerBidirectionalCollection(values, 3)};
+  auto bidirectional_iterator = AsReferences(bidirectional_collection);
+  TEST_FORWARD_ONLY_CHAINED_OPERATORS(forward_iterator);
+  TEST_BIDIRECTIONAL_CHAINED_OPERATORS(bidirectional_iterator);
 }
 
 TEST(AsReferencesReverseTest_pointer, ReturnsCorrectValues) {
@@ -1160,6 +1248,13 @@ TEST(ChainTest, BidirectionalChainOfForwardOnlyContainers) {
   // The fact that it compiles means it passes the test
   BiDirectionalCollection<ForwardOnlyCollection<int>> collection{};
   Chain(collection).begin();
+}
+
+TEST(ChainTest, CanChainOperators) {
+  auto forward_iterator = Chain(ForwardOnlyCollection<list<int>>{});
+  auto bidirectional_iterator = Chain(BiDirectionalCollection<list<int>>{});
+  TEST_FORWARD_ONLY_CHAINED_OPERATORS(forward_iterator);
+  TEST_BIDIRECTIONAL_CHAINED_OPERATORS(bidirectional_iterator);
 }
 
 TEST(ChainReverseTest, ReturnsCorrectValues) {
