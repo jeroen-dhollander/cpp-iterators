@@ -25,6 +25,9 @@ template <typename T> class OtherForwardOnlyCollection : public ForwardIterated<
   OtherForwardOnlyCollection(std::initializer_list<T> values) : ForwardIterated(std::vector<T>(values)){};
 };
 
+template <typename T> using CollectionWithoutSize = std::forward_list<T>;
+template <typename T> using CollectionWithSize = std::list<T>;
+
 // Prints a human-readable string of the given type, e.g. 'int const *'.
 // https://stackoverflow.com/a/20170989/3490116
 template <class T> std::string type_name() {
@@ -130,6 +133,27 @@ template <typename T> bool AnyFilterFunction(const T& value) { return true; }
     EXPECT_TYPE(expected_reversed_type, decltype(_iterable.reverse()));     \
   }
 
+// True if the iterable has a 'size()' method
+#define HAS_SIZE(_iterable) details::has_size<decltype(_iterable)>::value
+// Tests both 'size()' and 'Size()'
+#define TEST_SIZE(expected_size, _iterable)                    \
+  {                                                            \
+    EXPECT_EQ(expected_size, std::as_const(_iterable).size()); \
+    EXPECT_EQ(expected_size, std::as_const(_iterable).Size()); \
+  }
+// Tests both 'empty()' and 'IsEmpty()'
+#define EXPECT_IS_EMPTY(_iterable)                   \
+  {                                                  \
+    EXPECT_TRUE(std::as_const(_iterable).empty());   \
+    EXPECT_TRUE(std::as_const(_iterable).IsEmpty()); \
+  }
+// Tests both 'empty()' and 'IsEmpty()'
+#define EXPECT_IS_NOT_EMPTY(_iterable)                \
+  {                                                   \
+    EXPECT_FALSE(std::as_const(_iterable).empty());   \
+    EXPECT_FALSE(std::as_const(_iterable).IsEmpty()); \
+  }
+
 TEST(IsConstTest, SanityCheck) {
   // Test that our 'details::is_const_type' utility works as expected
 #define IS_CONST(_type) details::is_const_type<_type>::value
@@ -208,6 +232,27 @@ TEST(EnumerateTest, ReturnsCorrectValues) {
 
   EXPECT_EQ("0: A, 1: B, 2: C, ", FormatEnumerate(iterator));
   EXPECT_EQ("0: A, 1: B, 2: C, ", FormatEnumerate(std::as_const(iterator)));
+}
+
+TEST(EnumerateTest, Size_supported_if_nested_collection_has_size) {
+  CollectionWithSize<char> collection{'A', 'B', 'C'};
+  auto iterator = Enumerate(collection);
+
+  EXPECT_TRUE(HAS_SIZE(iterator));
+  TEST_SIZE(3, iterator);
+}
+
+TEST(EnumerateTest, Size_not_supported_if_nested_collection_does_not_have_size) {
+  EXPECT_FALSE(HAS_SIZE(Enumerate(CollectionWithoutSize<char>{})));
+}
+
+TEST(EnumerateTest, SupportsEmpty) {
+  CollectionWithoutSize<char> collection{'A', 'B', 'C'};
+  auto empty_iterator = Enumerate(list<int>{});
+  auto non_empty_iterator = Enumerate(list<int>{1});
+
+  EXPECT_IS_EMPTY(empty_iterator);
+  EXPECT_IS_NOT_EMPTY(non_empty_iterator);
 }
 
 TEST(EnumerateTest, CanModifyValues) {
@@ -342,6 +387,27 @@ TEST(IterateTest, ReturnsCorrectValues) {
   EXPECT_THAT(std::as_const(iterator), ElementsAre(1, 3, 5));
 }
 
+TEST(IterateTest, Size_supported_if_nested_collection_has_size) {
+  CollectionWithSize<char> collection{'A', 'B', 'C'};
+  auto iterator = Iterate(collection);
+
+  EXPECT_TRUE(HAS_SIZE(iterator));
+  TEST_SIZE(3, iterator);
+}
+
+TEST(IterateTest, Size_not_supported_if_nested_collection_does_not_have_size) {
+  EXPECT_FALSE(HAS_SIZE(Iterate(CollectionWithoutSize<char>{})));
+}
+
+TEST(IterateTest, SupportsEmpty) {
+  CollectionWithoutSize<char> collection{'A', 'B', 'C'};
+  auto empty_iterator = Iterate(list<int>{});
+  auto non_empty_iterator = Iterate(list<int>{1});
+
+  EXPECT_IS_EMPTY(empty_iterator);
+  EXPECT_IS_NOT_EMPTY(non_empty_iterator);
+}
+
 TEST(IterateTest, CanModifyValues) {
   ForwardOnlyCollection<int> collection{1, 3, 5};
   auto iterator = Iterate(collection);
@@ -451,6 +517,22 @@ TEST(ReverseTest, CanModifyValues) {
   EXPECT_THAT(collection, ElementsAre(1, 3, 123));
 }
 
+TEST(ReverseTest, Size_supported_if_nested_collection_has_size) {
+  CollectionWithSize<char> collection{'A', 'B', 'C'};
+  auto iterator = Reverse(collection);
+
+  EXPECT_TRUE(HAS_SIZE(iterator));
+  TEST_SIZE(3, iterator);
+}
+
+TEST(ReverseTest, SupportsEmpty) {
+  CollectionWithoutSize<char> collection{'A', 'B', 'C'};
+  auto empty_iterator = Reverse(list<int>{});
+  auto non_empty_iterator = Reverse(list<int>{1});
+
+  EXPECT_IS_EMPTY(empty_iterator);
+  EXPECT_IS_NOT_EMPTY(non_empty_iterator);
+}
 TEST(ReverseTest, OverNonConstCollection) {
   BiDirectionalCollection<int> collection{1, 3, 5};
   auto iterator = Reverse(collection);
@@ -537,6 +619,38 @@ TEST(JoinTest, ReturnsCorrectValues) {
 
   EXPECT_THAT(iterator, ElementsAre(1, 2, 3, 4, 5, 6));
   EXPECT_THAT(std::as_const(iterator), ElementsAre(1, 2, 3, 4, 5, 6));
+}
+
+TEST(JoinTest, Size_supported_if_both_collections_support_size) {
+  BiDirectionalCollection<int> first{1, 2};
+  OtherBiDirectionalCollection<int> second{4, 5, 6};
+  auto iterator = Join(first, second);
+
+  EXPECT_TRUE(HAS_SIZE(iterator));
+  TEST_SIZE(first.size() + second.size(), iterator);
+}
+
+TEST(JoinTest, Size_not_supported_if_either_collection_does_not_support_size) {
+  CollectionWithSize<int> with_size{1, 2};
+  CollectionWithoutSize<int> without_size{4, 5, 6};
+
+  EXPECT_FALSE(HAS_SIZE(Join(with_size, without_size)));
+  EXPECT_FALSE(HAS_SIZE(Join(without_size, with_size)));
+}
+
+TEST(JoinTest, SupportsEmpty) {
+  CollectionWithoutSize<int> empty{};
+  CollectionWithoutSize<int> non_empty{1};
+
+  EXPECT_TRUE(Join(empty, empty).IsEmpty());
+  EXPECT_FALSE(Join(non_empty, empty).IsEmpty());
+  EXPECT_FALSE(Join(empty, non_empty).IsEmpty());
+  EXPECT_FALSE(Join(non_empty, non_empty).IsEmpty());
+
+  EXPECT_TRUE(Join(empty, empty).empty());
+  EXPECT_FALSE(Join(non_empty, empty).empty());
+  EXPECT_FALSE(Join(empty, non_empty).empty());
+  EXPECT_FALSE(Join(non_empty, non_empty).empty());
 }
 
 TEST(JoinTest, WorksForEmptyCollections) {
@@ -696,6 +810,27 @@ TEST(MapTest, ReturnsCorrectValues) {
   EXPECT_THAT(std::as_const(iterator), ElementsAre("1", "3", "5"));
 }
 
+TEST(MapTest, Size_supported_if_nested_collection_has_size) {
+  CollectionWithSize<char> collection{'A', 'B', 'C'};
+  auto iterator = Map(collection, AnyMappingFunction<int>);
+
+  EXPECT_TRUE(HAS_SIZE(iterator));
+  TEST_SIZE(3, iterator);
+}
+
+TEST(MapTest, Size_not_supported_if_nested_collection_does_not_have_size) {
+  EXPECT_FALSE(HAS_SIZE(Map(CollectionWithoutSize<char>{}, AnyMappingFunction<int>)));
+}
+
+TEST(MapTest, SupportsEmpty) {
+  CollectionWithoutSize<char> collection{'A', 'B', 'C'};
+  auto empty_iterator = Map(list<int>{}, AnyMappingFunction<int>);
+  auto non_empty_iterator = Map(list<int>{1}, AnyMappingFunction<int>);
+
+  EXPECT_IS_EMPTY(empty_iterator);
+  EXPECT_IS_NOT_EMPTY(non_empty_iterator);
+}
+
 TEST(MapTest, CanModifyValues) {
   // Note: For map, the non-const version means we send a non-const value into the mapping function
   ForwardOnlyCollection<int> collection{1, 3, 5};
@@ -819,6 +954,29 @@ TEST(FilterTest, ReturnsCorrectValues) {
 
   EXPECT_THAT(iterator, ElementsAre(1, 3, 5));
   EXPECT_THAT(std::as_const(iterator), ElementsAre(1, 3, 5));
+}
+
+TEST(FilterTest, Size_supported_if_nested_collection_has_size) {
+  CollectionWithSize<int> collection{1, 2, 3, 4, 5};
+  auto iterator = Filter(collection, is_odd);
+
+  EXPECT_TRUE(HAS_SIZE(iterator));
+  TEST_SIZE(3, iterator);
+}
+
+TEST(FilterTest, Size_not_supported_if_nested_collection_does_not_have_size) {
+  CollectionWithoutSize<int> collection{1, 2, 3, 4, 5};
+  auto iterator = Filter(collection, is_odd);
+
+  EXPECT_FALSE(HAS_SIZE(iterator));
+}
+
+TEST(FilterTest, SupportsEmpty) {
+  auto empty_iterator = Filter(CollectionWithoutSize<int>{2, 4}, is_odd);
+  auto non_empty_iterator = Filter(CollectionWithoutSize<int>{2, 3, 4}, is_odd);
+
+  EXPECT_IS_EMPTY(empty_iterator);
+  EXPECT_IS_NOT_EMPTY(non_empty_iterator);
 }
 
 TEST(FilterTest, CanFilterFirstValue) {
@@ -949,6 +1107,30 @@ TEST(AsReferencesTest_unique_ptr, ReturnsCorrectValues) {
   EXPECT_THAT(std::as_const(iterator), ElementsAre(1, 3, 5));
 }
 
+TEST(AsReferencesTest_unique_ptr, Size_supported_if_nested_collection_has_size) {
+  int values[] = {1, 3, 5};
+  auto collection{ToUniquePtrBidirectionalCollection(values, 3)};
+  auto iterator = AsReferences(collection);
+
+  EXPECT_TRUE(HAS_SIZE(iterator));
+  TEST_SIZE(3, iterator);
+}
+
+TEST(AsReferencesTest_unique_ptr, Size_not_supported_if_nested_collection_does_not_have_size) {
+  EXPECT_FALSE(HAS_SIZE(AsReferences(ToUniquePtrForwardOnlyCollection(nullptr, 0))));
+}
+
+TEST(AsReferencesTest_unique_ptr, SupportsEmpty) {
+  int values[] = {1, 3, 5};
+  auto empty_collection{ToUniquePtrBidirectionalCollection(values, 0)};
+  auto non_empty_collection{ToUniquePtrBidirectionalCollection(values, 1)};
+  auto empty_iterator = AsReferences(empty_collection);
+  auto non_empty_iterator = AsReferences(non_empty_collection);
+
+  EXPECT_IS_EMPTY(empty_iterator);
+  EXPECT_IS_NOT_EMPTY(non_empty_iterator);
+}
+
 TEST(AsReferencesTest_unique_ptr, CanModifyValues) {
   int values[] = {1, 3, 5};
   auto collection{ToUniquePtrForwardOnlyCollection(values, 3)};
@@ -1075,6 +1257,30 @@ TEST(AsReferencesTest_pointer, ReturnsCorrectValues) {
   EXPECT_THAT(std::as_const(iterator), ElementsAre(1, 3, 5));
 }
 
+TEST(AsReferencesTest_pointer, Size_supported_if_nested_collection_has_size) {
+  int values[] = {1, 3, 5};
+  auto collection{ToPointerBidirectionalCollection(values, 3)};
+  auto iterator = AsReferences(collection);
+
+  EXPECT_TRUE(HAS_SIZE(iterator));
+  TEST_SIZE(3, iterator);
+}
+
+TEST(AsReferencesTest_pointer, Size_not_supported_if_nested_collection_does_not_have_size) {
+  EXPECT_FALSE(HAS_SIZE(AsReferences(ToPointerForwardOnlyCollection(nullptr, 0))));
+}
+
+TEST(AsReferencesTest_pointer, SupportsEmpty) {
+  int values[] = {1, 3, 5};
+  auto empty_collection{ToPointerBidirectionalCollection(values, 0)};
+  auto non_empty_collection{ToPointerBidirectionalCollection(values, 1)};
+  auto empty_iterator = AsReferences(empty_collection);
+  auto non_empty_iterator = AsReferences(non_empty_collection);
+
+  EXPECT_IS_EMPTY(empty_iterator);
+  EXPECT_IS_NOT_EMPTY(non_empty_iterator);
+}
+
 TEST(AsReferencesTest_pointer, CanModifyValues) {
   int values[] = {1, 3, 5};
   auto collection{ToPointerForwardOnlyCollection(values, 3)};
@@ -1184,6 +1390,32 @@ TEST(ChainTest, ReturnsCorrectValues) {
 
   EXPECT_THAT(iterator, ElementsAre(1, 2, 3, 4, 5, 6));
   EXPECT_THAT(std::as_const(iterator), ElementsAre(1, 2, 3, 4, 5, 6));
+}
+
+TEST(ChainTest, Size_supported_if_outer_and_inner_support_size) {
+  CollectionWithSize<CollectionWithSize<int>> collection{{1, 2}, {3, 4, 5}};
+  auto iterator = Chain(collection);
+
+  EXPECT_TRUE(HAS_SIZE(iterator));
+  TEST_SIZE(5, iterator);
+}
+
+TEST(ChainTest, Size_not_supported_if_outer_or_inner_does_not_support_size) {
+  CollectionWithSize<CollectionWithoutSize<int>> inner_without_size{};
+  CollectionWithoutSize<CollectionWithSize<int>> outer_without_size{};
+
+  EXPECT_FALSE(HAS_SIZE(Chain(inner_without_size)));
+  EXPECT_FALSE(HAS_SIZE(Chain(outer_without_size)));
+}
+
+TEST(ChainTest, SupportsEmpty) {
+  CollectionWithoutSize<CollectionWithoutSize<int>> empty{{}, {}};
+  CollectionWithoutSize<CollectionWithoutSize<int>> non_empty{{}, {1}, {}};
+
+  EXPECT_TRUE(Chain(empty).IsEmpty());
+  EXPECT_TRUE(Chain(empty).empty());
+  EXPECT_FALSE(Chain(non_empty).IsEmpty());
+  EXPECT_FALSE(Chain(non_empty).empty());
 }
 
 TEST(ChainTest, CanModifyValues) {
