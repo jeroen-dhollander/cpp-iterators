@@ -26,6 +26,8 @@ template <typename, typename> class Mapped;
 template <typename, typename> class ForwardMapped;
 template <typename, typename> class Filtered;
 template <typename, typename> class ForwardFiltered;
+template <typename, typename> class Zipped;
+template <typename, typename> class ForwardZipped;
 
 namespace details {
 
@@ -123,15 +125,12 @@ auto Enumerate(T&& iterable) {
 // class MyClass
 // {
 //     public:
-//          const_iterator = IteratorConst<MyCollection>;
-//          iterator = Iterator<MyCollection>;
-//
-//          const_iterator IterateStuff() const
+//          auto IterateStuff() const
 //          {
 //              return Iterate(stuff);
 //          }
 //
-//          iterator IterateStuff()
+//          auto IterateStuff()
 //          {
 //              return Iterate(stuff);
 //          }
@@ -291,6 +290,33 @@ auto Filter(T&& data, FilterFunction filter) {
   return ForwardFiltered<T, FilterFunction>(std::forward<T>(data), std::forward<FilterFunction>(filter));
 }
 
+// Creates tuples of the elements in both collections.
+//
+// Iteration stops as soon as one collection is exhausted,
+// so the size is the size of the shortest collection.
+//
+// For example, this:
+//
+// vector<int> first {{1, 2, 3, 4, 5};
+// vector<char> second {{'A', 'B', 'C'}};
+// for (const auto & pair: Zip(first, second))
+//     printf("%u: %c\n", item.First(), item.Second());
+//
+// will print
+//     0: A
+//     1: B
+//     2: C
+template <typename T1, typename T2,
+          typename details::enable_if_t<details::are_bidirectional_collections<T1, T2>::value, int> = 1>
+auto Zip(T1&& iterable_1, T2&& iterable_2) {
+  return Zipped<T1, T2>{std::forward<T1>(iterable_1), std::forward<T2>(iterable_2)};
+}
+template <typename T1, typename T2,
+          typename details::enable_if_t<!details::are_bidirectional_collections<T1, T2>::value, int> = 1>
+auto Zip(T1&& iterable_1, T2&& iterable_2) {
+  return ForwardZipped<T1, T2>{std::forward<T1>(iterable_1), std::forward<T2>(iterable_2)};
+}
+
 //-----------------------------------------------------------------------------
 // Implementation
 //-----------------------------------------------------------------------------
@@ -430,7 +456,7 @@ template <typename T> class Item {
 template <typename _iterator, typename _return_type> class EnumeratedIterator {
  public:
   using _collection_value_type = details::remove_cvref_t<decltype(std::declval<_return_type>().Value())>;
-  using _Item = Item<_collection_value_type>;
+  using _Item = details::remove_cvref_t<_return_type>;
 
   EnumeratedIterator(_iterator begin, _iterator end, int position, int position_delta)
       : begin_(begin), end_(end), position_(position), position_delta_(position_delta), item_{} {
@@ -662,7 +688,7 @@ template <typename _outer_iterator, typename _inner_iterator> class ChainedItera
   GetIteratorFunction get_inner_end_;
 };
 
-// contains the forward iterating shared by all iterators (forward-only and bidirectional)
+// contains the forward iterating shared by all chained iterators (forward-only and bidirectional)
 template <typename T> class ChainedBase {
  public:
   using _outer_collection = details::remove_cvref_t<T>;
@@ -727,14 +753,14 @@ template <typename T> class ChainedBase {
   T data_;
 };
 
-// The forward-only iterator
+// The forward-only chained iterator
 template <typename T> class ForwardChained : public ChainedBase<T>, public WithChainedOperators<ForwardChained<T>> {
  public:
   ForwardChained(T&& data) : ChainedBase<T>(std::forward<T>(data)) {}
   // Note: all functionality is proved by the base-classes
 };
 
-// The bi-direcitonal iterator
+// The bi-direcitonal chained iterator
 template <typename T> class Chained : public ChainedBase<T>, public WithChainedOperators<Chained<T>> {
  public:
   using typename ChainedBase<T>::_outer_collection;
@@ -803,7 +829,7 @@ template <typename _iterator, typename _return_value> class ReferencedIterator {
   _iterator end_;
 };
 
-// contains the forward iterating shared by all iterators (forward-only and bidirectional)
+// contains the forward iterating shared by all referenced iterators (forward-only and bidirectional)
 template <typename T> class ReferencedBase : public WithSizeAndEmpty<T> {
  public:
   using _collection_type = typename details::remove_reference_t<T>;
@@ -830,7 +856,7 @@ template <typename T> class ReferencedBase : public WithSizeAndEmpty<T> {
   T iterable_;
 };
 
-// the forward-only iterator
+// the forward-only referenced iterator
 template <typename T>
 class ForwardReferenced : public ReferencedBase<T>, public WithChainedOperators<ForwardReferenced<T>> {
  public:
@@ -838,7 +864,7 @@ class ForwardReferenced : public ReferencedBase<T>, public WithChainedOperators<
   // Note: all functionality is proved by the base-classes
 };
 
-// the bi-directional iterator
+// the bi-directional referenced iterator
 template <typename T> class Referenced : public ReferencedBase<T>, public WithChainedOperators<Referenced<T>> {
  public:
   using typename ReferencedBase<T>::_collection_type;
@@ -892,7 +918,7 @@ template <typename _iterator, typename _return_value> class ReferencedUniqueIter
   _iterator end_;
 };
 
-// contains the forward iterating shared by all iterators (forward-only and bidirectional)
+// contains the forward iterating shared by all referenced iterators (forward-only and bidirectional)
 template <typename T> class ReferencedUniqueBase : public WithSizeAndEmpty<T> {
  public:
   using _collection_type = typename details::remove_reference_t<T>;
@@ -919,7 +945,7 @@ template <typename T> class ReferencedUniqueBase : public WithSizeAndEmpty<T> {
   T iterable_;
 };
 
-// The forward-only iterator
+// The forward-only referenced iterator
 template <typename T>
 class ForwardReferencedUnique : public ReferencedUniqueBase<T>,
                                 public WithChainedOperators<ForwardReferencedUnique<T>> {
@@ -928,7 +954,7 @@ class ForwardReferencedUnique : public ReferencedUniqueBase<T>,
   // Note: all functionality is proved by the base-classes
 };
 
-// The bi-directional iterator
+// The bi-directional referenced iterator
 template <typename T>
 class ReferencedUnique : public ReferencedUniqueBase<T>, public WithChainedOperators<ReferencedUnique<T>> {
  public:
@@ -986,6 +1012,7 @@ template <typename T> class Reversed : public WithChainedOperators<Reversed<T>>,
   T iterable_;
 };
 
+// The iterator used by 'Join'
 template <typename _FirstIterator, typename _SecondIterator> class JoinedIterator {
  public:
   JoinedIterator(_FirstIterator first, _FirstIterator first_end, _SecondIterator second, _SecondIterator second_end)
@@ -1013,7 +1040,7 @@ template <typename _FirstIterator, typename _SecondIterator> class JoinedIterato
   _SecondIterator second_end_;
 };
 
-// contains the forward iterating shared by all iterators (forward-only and bidirectional
+// contains the forward iterating shared by all joined iterators (forward-only and bidirectional
 template <typename T1, typename T2> class JoinedBase {
  public:
   using _iterable_1 = typename details::remove_reference_t<T1>;
@@ -1066,7 +1093,7 @@ template <typename T1, typename T2> class JoinedBase {
   T2 second_;
 };
 
-// The forward-only iterator
+// The forward-only joined iterator
 template <typename T1, typename T2>
 class ForwardJoined : public JoinedBase<T1, T2>, public WithChainedOperators<ForwardJoined<T1, T2>> {
  public:
@@ -1074,7 +1101,7 @@ class ForwardJoined : public JoinedBase<T1, T2>, public WithChainedOperators<For
   // Note: all functionality is proved by the base-classes
 };
 
-// The bidirectional iterator
+// The bidirectional joined iterator
 template <typename T1, typename T2>
 class Joined : public JoinedBase<T1, T2>, public WithChainedOperators<Joined<T1, T2>> {
  public:
@@ -1115,6 +1142,7 @@ class Joined : public JoinedBase<T1, T2>, public WithChainedOperators<Joined<T1,
   }
 };
 
+// the iterator used by 'Map'
 template <typename _iterable, typename _function> class MappedIterator {
  public:
   MappedIterator(_iterable begin, _iterable end, const _function& mapping_function)
@@ -1133,7 +1161,7 @@ template <typename _iterable, typename _function> class MappedIterator {
   const _function& mapping_function_;
 };
 
-// contains the forward iterating shared by all enumerators (forward-only and bidirectional)
+// contains the forward iterating shared by all mapped iterators (forward-only and bidirectional)
 template <typename T, typename Function> class MappedBase : public WithSizeAndEmpty<T> {
  public:
   using _iterable = typename details::remove_reference_t<T>;
@@ -1169,7 +1197,7 @@ template <typename T, typename Function> class MappedBase : public WithSizeAndEm
   Function mapping_function_;
 };
 
-// The forward-only iterator
+// The forward-only mapped iterator
 template <typename T, typename Function>
 class ForwardMapped : public MappedBase<T, Function>, public WithChainedOperators<ForwardMapped<T, Function>> {
  public:
@@ -1178,7 +1206,7 @@ class ForwardMapped : public MappedBase<T, Function>, public WithChainedOperator
   // Note: all functionality is proved by the base-classes
 };
 
-// The bi-directional iterator
+// The bi-directional mapped iterator
 template <typename T, typename Function>
 class Mapped : public MappedBase<T, Function>, public WithChainedOperators<Mapped<T, Function>> {
  public:
@@ -1215,6 +1243,7 @@ class Mapped : public MappedBase<T, Function>, public WithChainedOperators<Mappe
   }
 };
 
+// The iterator used by 'Filter'
 template <typename _iterable, typename _function> class FilterIterator {
  public:
   FilterIterator(_iterable begin, _iterable end, const _function& filter) : begin_(begin), end_(end), filter_(filter) {
@@ -1246,7 +1275,7 @@ template <typename _iterable, typename _function> class FilterIterator {
   const _function& filter_;
 };
 
-// contains the forward iterating shared by all enumerators (forward-only and bidirectional)
+// contains the forward iterating shared by all filtered iterators (forward-only and bidirectional)
 template <typename T, typename FilterFunction> class FilteredBase {
  public:
   using _iterable = typename details::remove_reference_t<T>;
@@ -1294,7 +1323,7 @@ template <typename T, typename FilterFunction> class FilteredBase {
   FilterFunction filter_;
 };
 
-// The forward-only iterator
+// The forward-only filtered iterator
 template <typename T, typename FilterFunction>
 class ForwardFiltered : public FilteredBase<T, FilterFunction>,
                         public WithChainedOperators<ForwardFiltered<T, FilterFunction>> {
@@ -1304,7 +1333,7 @@ class ForwardFiltered : public FilteredBase<T, FilterFunction>,
   // Note: all functionality is proved by the base-classes
 };
 
-// The bi-directional iterator
+// The bi-directional filtered iterator
 template <typename T, typename FilterFunction>
 class Filtered : public FilteredBase<T, FilterFunction>, public WithChainedOperators<Filtered<T, FilterFunction>> {
  public:
@@ -1336,6 +1365,182 @@ class Filtered : public FilteredBase<T, FilterFunction>, public WithChainedOpera
 
   const_reverse_iterator rend() const {
     return const_reverse_iterator{details::crend(this->iterable_), details::crend(this->iterable_), this->filter_};
+  }
+};
+
+// Returned value when iterating Zip
+template <typename T1, typename T2> class ZippedValue {
+ public:
+  ZippedValue() : ZippedValue(nullptr, nullptr) {}
+
+  ZippedValue(T1* first, T2* second) : first_(first), second_(second) {}
+
+  const T1& First() const { return *first_; }
+  T1& First() { return *first_; }
+  const T2& Second() const { return *second_; }
+  T2& Second() { return *second_; }
+
+ private:
+  T1* first_;
+  T2* second_;
+};
+
+// The iterator used by 'Zip'
+template <typename _first_iterator, typename _second_iterator, typename _return_type> class ZippedIterator {
+ public:
+  using _first_value_type = details::remove_cvref_t<decltype(std::declval<_return_type>().First())>;
+  using _second_value_type = details::remove_cvref_t<decltype(std::declval<_return_type>().Second())>;
+  using _ZippedValue = details::remove_cvref_t<_return_type>;
+
+  ZippedIterator(_first_iterator first_begin, _first_iterator first_end, _second_iterator second_begin,
+                 _second_iterator second_end)
+      : first_begin_(first_begin),
+        first_end_(first_end),
+        second_begin_(second_begin),
+        second_end_(second_end),
+        value_{} {
+    SetValue();
+  }
+
+  _return_type& operator*() { return value_; }
+
+  _return_type& operator*() const {
+    // Dereferencing a const or a non-const iterator should not make a difference
+    // (as the constness of the iterator has no bearing on the returned value of the collection).
+    return const_cast<_return_type&>(value_);
+  }
+
+  void operator++() {
+    ++first_begin_;
+    ++second_begin_;
+    SetValue();
+  }
+
+  bool operator==(const ZippedIterator& other) const { return IsAtEnd() == other.IsAtEnd(); }
+  bool operator!=(const ZippedIterator& other) const { return !(*this == other); }
+
+ private:
+  bool IsAtEnd() const { return (first_begin_ == first_end_ || second_begin_ == second_end_); }
+
+  void SetValue() {
+    if (!IsAtEnd())
+      value_ = _ZippedValue{&NonConstFirstValue(), &NonConstSecondValue()};
+  }
+
+  _first_value_type& NonConstFirstValue() { return const_cast<_first_value_type&>(*first_begin_); }
+  _second_value_type& NonConstSecondValue() { return const_cast<_second_value_type&>(*second_begin_); }
+
+  _first_iterator first_begin_;
+  _first_iterator first_end_;
+  _second_iterator second_begin_;
+  _second_iterator second_end_;
+  _ZippedValue value_;
+};
+
+// contains the forward iterating shared by all zipped iterators (forward-only and bidirectional)
+template <typename T1, typename T2> class ZippedBase {
+ public:
+  using _first_collection_type = typename std::remove_reference<T1>::type;
+  using _first_collection_value_type = typename _first_collection_type::value_type;
+  using _first_collection_const_iterator = typename _first_collection_type::const_iterator;
+  using _first_collection_iterator = typename _first_collection_type::iterator;
+  using _second_collection_type = typename std::remove_reference<T2>::type;
+  using _second_collection_value_type = typename _second_collection_type::value_type;
+  using _second_collection_const_iterator = typename _second_collection_type::const_iterator;
+  using _second_collection_iterator = typename _second_collection_type::iterator;
+
+  using _Value = ZippedValue<_first_collection_value_type, _second_collection_value_type>;
+  using _non_const_iterator = ZippedIterator<_first_collection_iterator, _second_collection_iterator, _Value>;
+
+  using value_type = _Value;
+  using const_iterator =
+      ZippedIterator<_first_collection_const_iterator, _second_collection_const_iterator, const _Value>;
+  using iterator =
+      typename details::conditional_t<details::is_any_const<T1, T2>::value, const_iterator, _non_const_iterator>;
+
+  ZippedBase(T1&& first, T2&& second) : first_(std::forward<T1>(first)), second_(std::forward<T2>(second)){};
+
+  const_iterator begin() const {
+    return const_iterator{details::cbegin(first_), details::cend(first_), details::cbegin(second_),
+                          details::cend(second_)};
+  }
+  const_iterator end() const {
+    return const_iterator{details::cend(first_), details::cend(first_), details::cend(second_), details::cend(second_)};
+  }
+
+  iterator begin() { return iterator{std::begin(first_), std::end(first_), std::begin(second_), std::end(second_)}; }
+  iterator end() { return iterator{std::end(first_), std::end(first_), std::end(second_), std::end(second_)}; }
+
+  // STL-container compliant method to check if the container is empty
+  bool empty() const { return first_.empty() || second_.empty(); }
+  // Code style compliant method to check if the container is empty
+  bool IsEmpty() const { return first_.empty() || second_.empty(); }
+
+  template <typename X1 = T1, typename X2 = T2>
+  details::enable_if_t<details::have_size<X1, X2>::value, std::size_t> size() const {
+    return std::min(first_.size(), second_.size());
+  }
+  template <typename X1 = T1, typename X2 = T2>
+  details::enable_if_t<details::have_size<X1, X2>::value, std::size_t> Size() const {
+    return std::min(first_.size(), second_.size());
+  }
+
+ protected:
+  T1 first_;
+  T2 second_;
+};
+
+// the forward-only version
+template <typename T1, typename T2>
+class ForwardZipped : public ZippedBase<T1, T2>, public WithChainedOperators<ForwardZipped<T1, T2>> {
+ public:
+  explicit ForwardZipped(T1&& first, T2&& second)
+      : ZippedBase<T1, T2>(std::forward<T1>(first), std::forward<T2>(second)) {}
+
+  // Note: all functionality is proved by the base-classes
+};
+
+// the bidirectional version
+template <typename T1, typename T2>
+class Zipped : public ZippedBase<T1, T2>, public WithChainedOperators<Zipped<T1, T2>> {
+ public:
+  using typename ZippedBase<T1, T2>::_first_collection_type;
+  using typename ZippedBase<T1, T2>::_first_collection_value_type;
+  using _first_collection_const_reverse_iterator = typename _first_collection_type::const_reverse_iterator;
+  using _first_collection_reverse_iterator = typename _first_collection_type::reverse_iterator;
+
+  using typename ZippedBase<T1, T2>::_second_collection_type;
+  using typename ZippedBase<T1, T2>::_second_collection_value_type;
+  using _second_collection_const_reverse_iterator = typename _second_collection_type::const_reverse_iterator;
+  using _second_collection_reverse_iterator = typename _second_collection_type::reverse_iterator;
+
+  using typename ZippedBase<T1, T2>::_Value;
+  using _non_const_reverse_iterator =
+      ZippedIterator<_first_collection_reverse_iterator, _second_collection_reverse_iterator, _Value>;
+
+  using const_reverse_iterator =
+      ZippedIterator<_first_collection_const_reverse_iterator, _second_collection_const_reverse_iterator, const _Value>;
+  using reverse_iterator = typename details::conditional_t<details::is_any_const<T1, T2>::value, const_reverse_iterator,
+                                                           _non_const_reverse_iterator>;
+
+  explicit Zipped(T1&& first, T2&& second) : ZippedBase<T1, T2>(std::forward<T1>(first), std::forward<T2>(second)) {}
+
+  const_reverse_iterator rbegin() const {
+    return const_reverse_iterator{details::crbegin(this->first_), details::crend(this->first_),
+                                  details::crbegin(this->second_), details::crend(this->second_)};
+  }
+  const_reverse_iterator rend() const {
+    return const_reverse_iterator{details::crend(this->first_), details::crend(this->first_),
+                                  details::crend(this->second_), details::crend(this->second_)};
+  }
+
+  reverse_iterator rbegin() {
+    return reverse_iterator{details::rbegin(this->first_), details::rend(this->first_), details::rbegin(this->second_),
+                            details::rend(this->second_)};
+  }
+  reverse_iterator rend() {
+    return reverse_iterator{details::rend(this->first_), details::rend(this->first_), details::rend(this->second_),
+                            details::rend(this->second_)};
   }
 };
 }  // namespace iterators

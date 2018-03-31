@@ -7,6 +7,10 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
+namespace std {
+string to_string(char value) { return string(1, value); }
+}  // namespace std
+
 namespace iterators {
 using std::forward_list;
 using std::list;
@@ -1533,6 +1537,229 @@ TEST(ChainReverseTest, ChainRvalueCollection) {
   TEST_NON_CONST_REVERSE_ITERATOR(iterator, int&);
   TEST_CONST_REVERSE_ITERATOR(iterator, int const&);
   EXPECT_TYPE(int, decltype(iterator)::value_type);
+}
+
+template <typename _Zipped> string FormatZip(const _Zipped& iterable) {
+  string result{};
+  for (const auto& item : iterable)
+    result += "(" + std::to_string(item.First()) + "," + std::to_string(item.Second()) + "), ";
+  return result;
+}
+
+TEST(ZipTest, ReturnsCorrectValues) {
+  ForwardOnlyCollection<int> first{1, 2, 3};
+  OtherForwardOnlyCollection<char> second{'A', 'B', 'C'};
+  auto iterator = Zip(first, second);
+
+  EXPECT_EQ("A", std::to_string('A'));
+
+  EXPECT_EQ("(1,A), (2,B), (3,C), ", FormatZip(iterator));
+  EXPECT_EQ("(1,A), (2,B), (3,C), ", FormatZip(std::as_const(iterator)));
+}
+
+TEST(ZipTest, WorksWithCollectionsOfDifferentLength) {
+  ForwardOnlyCollection<int> short_collection{1, 2, 3};
+  OtherForwardOnlyCollection<int> long_collection{1, 2, 3, 4};
+  EXPECT_EQ("(1,1), (2,2), (3,3), ", FormatZip(Zip(short_collection, long_collection)));
+  EXPECT_EQ("(1,1), (2,2), (3,3), ", FormatZip(Zip(long_collection, short_collection)));
+}
+
+TEST(ZipTest, Size_supported_if_both_collections_support_size) {
+  BiDirectionalCollection<int> first{1, 2};
+  OtherBiDirectionalCollection<int> second{4, 5, 6};
+  auto iterator = Zip(first, second);
+
+  EXPECT_TRUE(HAS_SIZE(iterator));
+  TEST_SIZE(2, iterator);
+}
+
+TEST(ZipTest, Size_not_supported_if_either_collection_does_not_support_size) {
+  CollectionWithSize<int> with_size{1, 2};
+  CollectionWithoutSize<int> without_size{4, 5, 6};
+
+  EXPECT_FALSE(HAS_SIZE(Zip(with_size, without_size)));
+  EXPECT_FALSE(HAS_SIZE(Zip(without_size, with_size)));
+}
+
+TEST(ZipTest, SupportsEmpty) {
+  CollectionWithoutSize<int> empty{};
+  CollectionWithoutSize<int> non_empty{1};
+
+  EXPECT_TRUE(Zip(empty, empty).IsEmpty());
+  EXPECT_TRUE(Zip(non_empty, empty).IsEmpty());
+  EXPECT_TRUE(Zip(empty, non_empty).IsEmpty());
+  EXPECT_FALSE(Zip(non_empty, non_empty).IsEmpty());
+
+  EXPECT_TRUE(Zip(empty, empty).IsEmpty());
+  EXPECT_TRUE(Zip(non_empty, empty).IsEmpty());
+  EXPECT_TRUE(Zip(empty, non_empty).IsEmpty());
+  EXPECT_FALSE(Zip(non_empty, non_empty).empty());
+}
+
+TEST(ZipTest, WorksForEmptyCollections) {
+  ForwardOnlyCollection<int> empty{};
+  OtherForwardOnlyCollection<int> other{1};
+
+  EXPECT_THAT(Zip(empty, other), ElementsAre());
+  EXPECT_THAT(Zip(other, empty), ElementsAre());
+  EXPECT_THAT(Zip(empty, empty), ElementsAre());
+}
+
+TEST(ZipTest, CanModifyValues_InBothCollections) {
+  ForwardOnlyCollection<int> first{1};
+  OtherForwardOnlyCollection<int> second{2};
+
+  auto iterator = Zip(first, second);
+
+  auto& value = *iterator.begin();
+  value.First() = 100;
+  value.Second() = 200;
+
+  EXPECT_THAT(first, ElementsAre(100));
+  EXPECT_THAT(second, ElementsAre(200));
+}
+
+TEST(ZipTest, OverNonConstCollections) {
+  ForwardOnlyCollection<int> first{};
+  OtherForwardOnlyCollection<char> second{};
+  using ValueType = ZippedValue<int, char>;
+  auto iterator = Zip(first, second);
+
+  TEST_NON_CONST_ITERATOR(iterator, ValueType&);
+  TEST_CONST_ITERATOR(iterator, const ValueType&);
+  EXPECT_TYPE(ValueType, decltype(iterator)::value_type);
+}
+
+TEST(ZipTest, OverConstCollections) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  ForwardOnlyCollection<int> first{};
+  OtherForwardOnlyCollection<char> second{};
+  using ValueType = ZippedValue<int, char>;
+  auto iterator = Zip(std::as_const(first), std::as_const(second));
+
+  TEST_NON_CONST_ITERATOR(iterator, const ValueType&);
+  TEST_CONST_ITERATOR(iterator, const ValueType&);
+  EXPECT_TYPE(ValueType, decltype(iterator)::value_type);
+}
+
+TEST(ZipTest, OverConstAndNonConstCollections) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  ForwardOnlyCollection<int> first{};
+  OtherForwardOnlyCollection<char> second{};
+  using ValueType = ZippedValue<int, char>;
+
+  auto iterator_1 = Zip(std::as_const(first), second);
+  TEST_NON_CONST_ITERATOR(iterator_1, const ValueType&);
+  TEST_CONST_ITERATOR(iterator_1, const ValueType&);
+
+  auto iterator_2 = Zip(first, std::as_const(second));
+  TEST_NON_CONST_ITERATOR(iterator_2, const ValueType&);
+  TEST_CONST_ITERATOR(iterator_2, const ValueType&);
+}
+
+TEST(ZipTest, OverForwardAndBidirectionalCollections) {
+  ForwardOnlyCollection<int> first{1, 2};
+  BiDirectionalCollection<char> second{'A', 'B'};
+  auto iterator = Zip(first, second);
+
+  EXPECT_EQ("(1,A), (2,B), ", FormatZip(iterator));
+}
+
+TEST(ZipTest, ZipRvalueCollections) {
+  ForwardOnlyCollection<int> first{};
+  OtherForwardOnlyCollection<char> second{};
+  using ValueType = ZippedValue<int, char>;
+  auto iterator = Zip(std::move(first), std::move(second));
+
+  TEST_NON_CONST_ITERATOR(iterator, ValueType&);
+  TEST_CONST_ITERATOR(iterator, ValueType const&);
+  EXPECT_TYPE(ValueType, decltype(iterator)::value_type);
+}
+
+TEST(ZipTest, CanChainOperators) {
+  auto forward_iterator = Zip(ForwardOnlyCollection<int>{}, OtherForwardOnlyCollection<char>{});
+  auto bidirectional_iterator = Zip(BiDirectionalCollection<int>{}, OtherBiDirectionalCollection<char>{});
+  TEST_FORWARD_ONLY_CHAINED_OPERATORS(forward_iterator);
+  TEST_BIDIRECTIONAL_CHAINED_OPERATORS(bidirectional_iterator);
+}
+
+TEST(ZipReverseTest, ReturnsCorrectValues) {
+  BiDirectionalCollection<int> first{1, 2, 3};
+  OtherBiDirectionalCollection<char> second{'A', 'B', 'C'};
+  auto iterator = Reverse(Zip(first, second));
+
+  EXPECT_EQ("(3,C), (2,B), (1,A), ", FormatZip(iterator));
+  EXPECT_EQ("(3,C), (2,B), (1,A), ", FormatZip(std::as_const(iterator)));
+}
+TEST(ZipReverseTest, CanModifyValues_InBothCollections) {
+  BiDirectionalCollection<int> first{1};
+  OtherBiDirectionalCollection<int> second{2};
+
+  auto iterator = Zip(first, second);
+
+  auto& value = *iterator.rbegin();
+  value.First() = 100;
+  value.Second() = 200;
+
+  EXPECT_THAT(first, ElementsAre(100));
+  EXPECT_THAT(second, ElementsAre(200));
+}
+
+TEST(ZipReverseTest, OverNonConstCollections) {
+  BiDirectionalCollection<int> first{};
+  OtherBiDirectionalCollection<char> second{};
+  using ValueType = ZippedValue<int, char>;
+  auto iterator = Zip(first, second);
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, ValueType&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, const ValueType&);
+  EXPECT_TYPE(ValueType, decltype(iterator)::value_type);
+}
+
+TEST(ZipReverseTest, OverConstCollections) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  BiDirectionalCollection<int> first{};
+  OtherBiDirectionalCollection<char> second{};
+  using ValueType = ZippedValue<int, char>;
+  auto iterator = Zip(std::as_const(first), std::as_const(second));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, const ValueType&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, const ValueType&);
+  EXPECT_TYPE(ValueType, decltype(iterator)::value_type);
+}
+
+TEST(ZipReverseTest, OverConstAndNonConstCollections) {
+  // Note: In this case, even iterating non-const uses a const_iterator
+  BiDirectionalCollection<int> first{};
+  OtherBiDirectionalCollection<char> second{};
+  using ValueType = ZippedValue<int, char>;
+
+  auto iterator_1 = Zip(std::as_const(first), second);
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator_1, const ValueType&);
+  TEST_CONST_REVERSE_ITERATOR(iterator_1, const ValueType&);
+
+  auto iterator_2 = Zip(first, std::as_const(second));
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator_2, const ValueType&);
+  TEST_CONST_REVERSE_ITERATOR(iterator_2, const ValueType&);
+}
+
+TEST(ZipReverseTest, OverForwardAndBidirectionalCollections) {
+  BiDirectionalCollection<int> first{1, 2};
+  BiDirectionalCollection<char> second{'A', 'B'};
+  auto iterator = Zip(first, second);
+
+  EXPECT_EQ("(1,A), (2,B), ", FormatZip(iterator));
+}
+
+TEST(ZipReverseTest, ZipRvalueCollections) {
+  BiDirectionalCollection<int> first{};
+  OtherBiDirectionalCollection<char> second{};
+  using ValueType = ZippedValue<int, char>;
+  auto iterator = Zip(std::move(first), std::move(second));
+
+  TEST_NON_CONST_REVERSE_ITERATOR(iterator, ValueType&);
+  TEST_CONST_REVERSE_ITERATOR(iterator, ValueType const&);
+  EXPECT_TYPE(ValueType, decltype(iterator)::value_type);
 }
 
 }  // namespace iterators
