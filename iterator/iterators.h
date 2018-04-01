@@ -381,7 +381,7 @@ template <typename DerivedClass> class WithChainedOperators {
 // 'size' is added only if the nested collection supports 'size'
 // (as some STL containers like 'forward_list' do not support it).
 //
-// The derived class must call 'InitializeWithSizeAndEmpty' from their constructor.
+// The derived class must call 'this->InitializeWithSizeAndEmpty' from their constructor.
 template <typename T> class WithSizeAndEmpty {
  public:
   using _collection_type = typename std::remove_reference<T>::type;
@@ -394,11 +394,11 @@ template <typename T> class WithSizeAndEmpty {
   bool IsEmpty() const { return Data().empty(); }
 
   // STL-container compliant method to get the size (if the nested type supports 'size')
-  template <typename X = T> std::enable_if_t<details::has_size<X>::value, std::size_t> size() const {
+  template <typename X = T> details::enable_if_t<details::has_size<X>::value, std::size_t> size() const {
     return Data().size();
   }
   // Code style compliant method to get the size (if the nested type supports 'size')
-  template <typename X = T> std::enable_if_t<details::has_size<X>::value, std::size_t> Size() const {
+  template <typename X = T> details::enable_if_t<details::has_size<X>::value, std::size_t> Size() const {
     return Data().size();
   }
 
@@ -487,7 +487,7 @@ template <typename T> class EnumeratedBase : public WithSizeAndEmpty<T> {
       typename details::conditional_t<details::is_const_collection<T>::value, const_iterator, _non_const_iterator>;
 
   explicit EnumeratedBase(T&& iterable) : iterable_(std::forward<T>(iterable)) {
-    InitializeWithSizeAndEmpty(iterable_);
+    this->InitializeWithSizeAndEmpty(iterable_);
   }
 
   const_iterator begin() const {
@@ -551,7 +551,7 @@ template <typename T> class Enumerated : public EnumeratedBase<T>, public WithCh
   }
 
  private:
-  int MaxPosition() const { return static_cast<int>(size()) - 1; }
+  int MaxPosition() const { return static_cast<int>(this->size()) - 1; }
 
   constexpr static int kDecrement = -1;
 };
@@ -565,7 +565,9 @@ template <typename T> class IteratedBase : public WithSizeAndEmpty<T> {
   using const_iterator = typename _iterable::const_iterator;
   using iterator = details::non_const_iterator_t<T>;
 
-  explicit IteratedBase(T&& iterable) : iterable_(std::forward<T>(iterable)) { InitializeWithSizeAndEmpty(iterable_); }
+  explicit IteratedBase(T&& iterable) : iterable_(std::forward<T>(iterable)) {
+    this->InitializeWithSizeAndEmpty(iterable_);
+  }
 
   iterator begin() { return std::begin(iterable_); }
   iterator end() { return std::end(iterable_); }
@@ -612,7 +614,7 @@ template <typename _outer_iterator, typename _inner_iterator> class ChainedItera
         inner_end_(),
         get_inner_begin_(inner_begin_getter),
         get_inner_end_(inner_end_getter) {
-    InitializeInnerCollection();
+    this->InitializeInnerCollection();
     SkipEmptyInnerCollections();
   }
   auto& operator*() const { return *inner_begin_; }
@@ -704,12 +706,12 @@ template <typename T> class ChainedBase {
 
   // STL-container compliant method to get the size (if the nested type supports 'size')
   template <typename X = T>
-  std::enable_if_t<details::outer_and_inner_support_size<X>::value, std::size_t> size() const {
+  details::enable_if_t<details::outer_and_inner_support_size<X>::value, std::size_t> size() const {
     return Size();
   }
   // Code style compliant method to get the size (if the nested type supports 'size')
   template <typename X = T>
-  std::enable_if_t<details::outer_and_inner_support_size<X>::value, std::size_t> Size() const {
+  details::enable_if_t<details::outer_and_inner_support_size<X>::value, std::size_t> Size() const {
     std::size_t result = 0;
     for (const auto& collection : data_)
       result += collection.size();
@@ -816,7 +818,7 @@ template <typename T> class ReferencedBase : public WithSizeAndEmpty<T> {
       typename details::conditional_t<details::is_const_type<T>::value, const_iterator, _non_const_iterator>;
 
   explicit ReferencedBase(T&& iterable) : iterable_(std::forward<T>(iterable)) {
-    InitializeWithSizeAndEmpty(iterable_);
+    this->InitializeWithSizeAndEmpty(iterable_);
   }
 
   iterator begin() { return iterator{std::begin(iterable_), std::end(iterable_)}; }
@@ -905,7 +907,7 @@ template <typename T> class ReferencedUniqueBase : public WithSizeAndEmpty<T> {
       typename details::conditional_t<details::is_const_type<T>::value, const_iterator, _non_const_iterator>;
 
   explicit ReferencedUniqueBase(T&& iterable) : iterable_(std::forward<T>(iterable)) {
-    InitializeWithSizeAndEmpty(iterable_);
+    this->InitializeWithSizeAndEmpty(iterable_);
   }
 
   iterator begin() { return iterator{std::begin(iterable_), std::end(iterable_)}; }
@@ -967,7 +969,9 @@ template <typename T> class Reversed : public WithChainedOperators<Reversed<T>>,
   using const_reverse_iterator = typename _iterable::const_iterator;
   using reverse_iterator = details::non_const_iterator_t<T>;
 
-  explicit Reversed(T&& iterable) : iterable_(std::forward<T>(iterable)) { InitializeWithSizeAndEmpty(iterable_); }
+  explicit Reversed(T&& iterable) : iterable_(std::forward<T>(iterable)) {
+    this->InitializeWithSizeAndEmpty(iterable_);
+  }
 
   iterator begin() { return details::rbegin(iterable_); }
   iterator end() { return details::rend(iterable_); }
@@ -1049,11 +1053,11 @@ template <typename T1, typename T2> class JoinedBase {
   bool IsEmpty() const { return first_.empty() && second_.empty(); }
 
   template <typename X1 = T1, typename X2 = T2>
-  std::enable_if_t<details::have_size<X1, X2>::value, std::size_t> size() const {
+  details::enable_if_t<details::have_size<X1, X2>::value, std::size_t> size() const {
     return first_.size() + second_.size();
   }
   template <typename X1 = T1, typename X2 = T2>
-  std::enable_if_t<details::have_size<X1, X2>::value, std::size_t> Size() const {
+  details::enable_if_t<details::have_size<X1, X2>::value, std::size_t> Size() const {
     return first_.size() + second_.size();
   }
 
@@ -1145,7 +1149,7 @@ template <typename T, typename Function> class MappedBase : public WithSizeAndEm
 
   MappedBase(T&& iterable, Function&& mapping_function)
       : iterable_(std::forward<T>(iterable)), mapping_function_(std::forward<Function>(mapping_function)) {
-    InitializeWithSizeAndEmpty(iterable_);
+    this->InitializeWithSizeAndEmpty(iterable_);
   }
 
   iterator begin() { return iterator{std::begin(iterable_), std::end(iterable_), mapping_function_}; }
@@ -1273,10 +1277,12 @@ template <typename T, typename FilterFunction> class FilteredBase {
   }
 
   // STL-container compliant method to get the size (if the nested type supports 'size')
-  template <typename X = T> std::enable_if_t<details::has_size<X>::value, std::size_t> size() const { return Size(); }
+  template <typename X = T> details::enable_if_t<details::has_size<X>::value, std::size_t> size() const {
+    return Size();
+  }
 
   // Code style compliant method to get the size (if the nested type supports 'size')
-  template <typename X = T> std::enable_if_t<details::has_size<X>::value, std::size_t> Size() const {
+  template <typename X = T> details::enable_if_t<details::has_size<X>::value, std::size_t> Size() const {
     std::size_t result = 0;
     for (const auto& value : *this)
       ++result;
