@@ -327,5 +327,5 @@ for (auto & item: iterators::Zip(collection_1, collection_2))
      href="https://github.com/jeroen-dhollander">
     <span property="dct:title">Jeroen Dhollander</span></a>
   has waived all copyright and related or neighboring rights to
-  <span property="dct:title">Iterator-utilities</span>.
+  <span property="dct:title">CPP-Iterators</span>.
 </p>
