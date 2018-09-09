@@ -1246,11 +1246,13 @@ class Mapped : public MappedBase<T, Function>, public WithChainedOperators<Mappe
 // The iterator used by 'Filter'
 template <typename _iterable, typename _function> class FilterIterator {
  public:
+  using _return_type = typename std::result_of<decltype (&_iterable::operator*)(_iterable)>::type;
+
   FilterIterator(_iterable begin, _iterable end, const _function& filter) : begin_(begin), end_(end), filter_(filter) {
     SkipFilteredEntries();
   }
 
-  auto& operator*() const { return *begin_; }
+  _return_type operator*() const { return *begin_; }
 
   void operator++() {
     ++begin_;

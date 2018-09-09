@@ -1042,6 +1042,15 @@ TEST(FilterTest, CanChainOperators) {
   TEST_BIDIRECTIONAL_CHAINED_OPERATORS(bidirectional_iterator);
 }
 
+TEST(FilterTest, WorksOnRValues) {
+  auto rvalue_collection =
+      Map(BiDirectionalCollection<char>{'A', 'B', 'C'}, [](const char& value) { return std::to_string(value); });
+
+  auto values = rvalue_collection.filter([](const std::string& value) { return value != "B"; });
+
+  EXPECT_THAT(values, ElementsAre("A", "C"));
+}
+
 TEST(FilterReverseTest, ReturnsCorrectValues) {
   BiDirectionalCollection<int> collection{1, 2, 3, 4, 5};
   auto iterator = Reverse(Filter(collection, is_odd));
