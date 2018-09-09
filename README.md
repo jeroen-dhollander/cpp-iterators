@@ -24,9 +24,9 @@ for (auto value : collection)
 ```
 
 As these for loops rely on iterators, in order to use range-based for loops over your own data-types, you either need to:
-    - Expose your internal STL collection containing your data
-    - Write your own iterator
-    - Copy your data in a temporary STL collection
+* Expose your internal STL collection containing your data
+* Write your own iterator
+* Copy your data in a temporary STL collection
 
 All these methods have drawbacks, ranging from performance overhead to writing boilerplate code for each class.
 
